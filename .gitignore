@@ -1,0 +1,4 @@
+/target
+/docs
+backend/.env
+CLAUDE.md
