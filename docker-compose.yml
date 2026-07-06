@@ -1,0 +1,57 @@
+# Orquestación del proyecto. Se levanta desde la raíz del repo con:
+#   docker compose up --build
+#
+# Compose lee las variables ${...} del archivo .env que está en esta misma
+# carpeta (la raíz). Por eso el .env vive aquí y no en backend/.
+#
+# A futuro el frontend se agrega como un servicio más (o se despliega fuera,
+# p. ej. Vercel); el backend no necesita cambios en ninguno de los dos casos.
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    ports:
+      # 127.0.0.1 = solo accesible desde esta máquina (para sqlx-cli, DBeaver...).
+      # Sin ese prefijo el puerto quedaría expuesto a toda la red local.
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      # Persistencia: las tablas sobreviven aunque el contenedor se destruya.
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready responde OK solo cuando Postgres ya acepta conexiones.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: backend/docker # ahí vive el Dockerfile; el código no se copia, se monta abajo
+    restart: always
+    ports:
+      - "${PORT}:${PORT}"
+    environment:
+      # Dentro de la red de compose, la base de datos se llama "db", no localhost.
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      PORT: ${PORT}
+    volumes:
+      # Se monta el repo completo: cargo-watch recompila al detectar cambios (hot-reload).
+      - ./:/usr/src/app
+      # Cachés para no volver a descargar dependencias ni recompilar todo en cada arranque.
+      - cargo_cache:/usr/local/cargo/registry
+      - target_cache:/usr/src/app/target
+    depends_on:
+      db:
+        # El backend arranca solo cuando el healthcheck de arriba pasa,
+        # así el pool de conexiones no falla por llegar antes que Postgres.
+        condition: service_healthy
+
+volumes:
+  db_data:
+  cargo_cache:
+  target_cache:

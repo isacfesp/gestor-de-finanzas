@@ -1,4 +1,7 @@
 /target
 /docs
+.env
 backend/.env
 CLAUDE.md
+doclaude/
+.claude/
