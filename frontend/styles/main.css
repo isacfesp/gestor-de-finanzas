@@ -1,0 +1,425 @@
+/* =====================================================================
+   main.css — Sistema de diseño de Gestor.
+
+   Concepto: "sala de vidrio" — un panel de vidrio esmerilado dividido
+   por marcos delgados (mullions), esquinas casi rectas (nada de
+   glassmorphism tipo burbuja), una cifra serif como único momento
+   protagonista y todo lo demás en una sans técnica y tranquila.
+
+   Paleta capturada de la referencia del cliente: azul marino profundo
+   como fondo, azul eléctrico como acento, un glow violeta como
+   segundo tono, verde/rojo como semántico (positivo/negativo).
+   ===================================================================== */
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: linear-gradient(150deg, var(--bg1), var(--bg2) 55%, var(--bg3));
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+h1, h2, h3, p { margin: 0; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------------------------- Tokens ---------------------------- */
+
+:root {
+  --font-display: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --font-body: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  --radius-pane: 10px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+
+  /* Claro por defecto */
+  --bg1:#F4F7FE; --bg2:#E9EFFC; --bg3:#DCE6FA;
+  --glass-bg: rgba(255,255,255,0.6);
+  --glass-hi: rgba(255,255,255,0.9);
+  --glass-lo: rgba(11,20,55,0.12);
+  --mullion: rgba(11,20,55,0.10);
+  --accent:#0052CC; --accent-rgb:0,82,204;
+  --glow-2:#6A3DE8; --glow-o:0.28;
+  --ink:#0B1437; --ink-soft: rgba(11,20,55,0.62); --ink-faint: rgba(11,20,55,0.4);
+  --positive:#03945B; --negative:#C81E1E; --negative-rgb:200,30,30; --warning:#B26B00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg1:#060B24; --bg2:#0B1437; --bg3:#142B6B;
+    --glass-bg: rgba(13,18,48,0.55);
+    --glass-hi: rgba(255,255,255,0.10);
+    --glass-lo: rgba(0,0,0,0.55);
+    --mullion: rgba(255,255,255,0.08);
+    --accent:#0075FF; --accent-rgb:0,117,255;
+    --glow-2:#4318FF; --glow-o:0.5;
+    --ink:#F5F7FF; --ink-soft: rgba(160,174,192,0.85); --ink-faint: rgba(160,174,192,0.55);
+    --positive:#01B574; --negative:#EA0606; --negative-rgb:234,6,6; --warning:#FFB020;
+  }
+}
+:root[data-theme="dark"] {
+  --bg1:#060B24; --bg2:#0B1437; --bg3:#142B6B;
+  --glass-bg: rgba(13,18,48,0.55);
+  --glass-hi: rgba(255,255,255,0.10);
+  --glass-lo: rgba(0,0,0,0.55);
+  --mullion: rgba(255,255,255,0.08);
+  --accent:#0075FF; --accent-rgb:0,117,255;
+  --glow-2:#4318FF; --glow-o:0.5;
+  --ink:#F5F7FF; --ink-soft: rgba(160,174,192,0.85); --ink-faint: rgba(160,174,192,0.55);
+  --positive:#01B574; --negative:#EA0606; --negative-rgb:234,6,6; --warning:#FFB020;
+}
+:root[data-theme="light"] {
+  --bg1:#F4F7FE; --bg2:#E9EFFC; --bg3:#DCE6FA;
+  --glass-bg: rgba(255,255,255,0.6);
+  --glass-hi: rgba(255,255,255,0.9);
+  --glass-lo: rgba(11,20,55,0.12);
+  --mullion: rgba(11,20,55,0.10);
+  --accent:#0052CC; --accent-rgb:0,82,204;
+  --glow-2:#6A3DE8; --glow-o:0.28;
+  --ink:#0B1437; --ink-soft: rgba(11,20,55,0.62); --ink-faint: rgba(11,20,55,0.4);
+  --positive:#03945B; --negative:#C81E1E; --negative-rgb:200,30,30; --warning:#B26B00;
+}
+
+/* -------------------------- Glow de fondo -------------------------- */
+/* Fijo detrás de todo: le da al backdrop-filter del vidrio algo con
+   detalle que distorsionar, si no, el "vidrio" se ve como una simple
+   sombra plana. */
+.bg-glow {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.bg-glow::before, .bg-glow::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+}
+.bg-glow::before {
+  width: 46vmax; height: 46vmax;
+  top: -14vmax; left: -12vmax;
+  background: var(--accent);
+  opacity: var(--glow-o);
+}
+.bg-glow::after {
+  width: 50vmax; height: 50vmax;
+  bottom: -18vmax; right: -14vmax;
+  background: var(--glow-2);
+  opacity: var(--glow-o);
+}
+
+/* ---------------------------- Vidrio ---------------------------- */
+
+.glass {
+  position: relative;
+  border-radius: var(--radius-pane);
+  background: var(--glass-bg);
+  backdrop-filter: blur(26px) saturate(180%) brightness(1.04);
+  -webkit-backdrop-filter: blur(26px) saturate(180%) brightness(1.04);
+  box-shadow:
+    inset 1px 1px 0 var(--glass-hi),
+    inset -1px -1px 0 var(--glass-lo),
+    0 26px 50px -22px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.glass::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'%3E%3C/feTurbulence%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'%3E%3C/rect%3E%3C/svg%3E");
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+.glass::after {
+  content: "";
+  position: absolute; top: 0; left: 8%; right: 8%; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-hi), transparent);
+}
+
+/* ------------------------------ Tipografía ------------------------------ */
+
+.eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.figure {
+  font-family: var(--font-display); font-weight: 500;
+  letter-spacing: -0.01em; color: var(--ink);
+}
+.text-soft { color: var(--ink-soft); }
+.text-faint { color: var(--ink-faint); }
+.text-positive { color: var(--positive); }
+.text-negative { color: var(--negative); }
+
+/* ------------------------------ Formularios ------------------------------ */
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.field input {
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid var(--mullion);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  font-size: 15px;
+  color: var(--ink);
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+.field input::placeholder { color: var(--ink-faint); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 12px 18px;
+  font-size: 14px; font-weight: 700; letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.btn-primary { background: var(--accent); color: #ffffff; }
+.btn-primary:hover:not(:disabled) { opacity: 0.92; }
+.btn-ghost {
+  background: transparent; color: var(--ink-soft);
+  border: 1px solid var(--mullion);
+}
+.btn-block { width: 100%; }
+
+.banner {
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.banner-error {
+  background: rgba(var(--negative-rgb), 0.12);
+  border: 1px solid var(--negative);
+  color: var(--negative);
+}
+
+/* ------------------------------ Login ------------------------------ */
+/* A propósito NO usa los tokens de --bg1/2/3 ni data-theme: es una
+   identidad fija (negro + neón azul), la misma sin importar si el
+   resto de la app está en claro u oscuro — es lo primero que se ve,
+   no la pantalla donde alguien quiere cambiar de tema. */
+
+.auth-screen {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  position: relative;
+  overflow: hidden;
+  /* Negro casi puro: las luces de abajo son acentos puntuales, no un
+     degradado que le gane al fondo. */
+  background: #020203;
+}
+.auth-screen::before,
+.auth-screen::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+.auth-screen::before {
+  width: 26vmax; height: 26vmax;
+  top: -8vmax; left: -8vmax;
+  background: #0072ff;
+  opacity: 0.55;
+}
+.auth-screen::after {
+  width: 22vmax; height: 22vmax;
+  bottom: -8vmax; right: -6vmax;
+  background: #00c2ff;
+  opacity: 0.4;
+}
+
+.auth-card {
+  /* Sobreescribe los tokens de tema solo dentro de esta tarjeta: todo
+     lo que ya usa var(--accent)/var(--ink)/var(--mullion) (inputs,
+     botón, banner de error) hereda este look negro/neón gratis. */
+  --ink: #eef5ff;
+  --ink-soft: rgba(238, 245, 255, 0.62);
+  --ink-faint: rgba(238, 245, 255, 0.4);
+  --accent: #2e9bff;
+  --accent-rgb: 46, 155, 255;
+  --mullion: rgba(130, 190, 255, 0.28);
+  --negative: #ff5d5d;
+  --negative-rgb: 255, 93, 93;
+
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 360px;
+  padding: 34px 28px 28px;
+  border-radius: var(--radius-pane);
+  color: var(--ink);
+  background: rgba(10, 16, 30, 0.55);
+  backdrop-filter: blur(28px) saturate(180%) brightness(1.08);
+  -webkit-backdrop-filter: blur(28px) saturate(180%) brightness(1.08);
+  box-shadow:
+    inset 1px 1px 0 rgba(150, 205, 255, 0.2),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.6),
+    0 30px 70px -20px rgba(0, 0, 0, 0.85),
+    0 0 70px -12px rgba(0, 150, 255, 0.4);
+  overflow: hidden;
+}
+.auth-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'%3E%3C/feTurbulence%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'%3E%3C/rect%3E%3C/svg%3E");
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+.auth-card::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 8%; right: 8%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(150, 205, 255, 0.6), transparent);
+}
+.auth-card h1 {
+  font-family: var(--font-display); font-weight: 500; font-size: 24px;
+  margin-bottom: 20px;
+}
+.auth-card form { display: flex; flex-direction: column; gap: 14px; }
+
+/* -------------------------- Marca (window pane) -------------------------- */
+
+.brand-mark {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1.4px solid var(--accent);
+  position: relative;
+  flex: none;
+}
+.brand-mark::after {
+  content: "";
+  position: absolute; inset: 3px;
+  border: 1px solid var(--mullion);
+}
+
+/* ------------------------------ App shell ------------------------------ */
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.app-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--mullion);
+  position: sticky; top: 0; z-index: 5;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(var(--accent-rgb), 0.04);
+}
+.app-workspace {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-soft); border: 1px solid var(--mullion);
+  padding: 3px 8px; border-radius: var(--radius-xs);
+}
+.app-user-btn {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+  background: transparent; border: 1px solid var(--mullion);
+  border-radius: 999px; padding: 5px 12px 5px 5px;
+  color: var(--ink-soft); cursor: pointer;
+}
+.app-user-btn .avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.16); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 18px 16px 90px;
+}
+
+.app-nav {
+  container-type: inline-size;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; gap: 4px; overflow-x: auto;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--mullion);
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  scrollbar-width: none;
+}
+.app-nav::-webkit-scrollbar { display: none; }
+.nav-link {
+  flex: none;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  text-decoration: none;
+  color: var(--ink-faint);
+  font-size: 10.5px; font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  min-width: 64px;
+}
+.nav-link svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.nav-link.is-active { color: var(--accent); background: rgba(var(--accent-rgb), 0.12); }
+
+/* Escritorio: rail lateral en vez de barra inferior. */
+@media (min-width: 860px) {
+  .app-shell { flex-direction: row; }
+  .app-header { position: fixed; top: 0; left: 200px; right: 0; }
+  .app-nav {
+    position: fixed; top: 0; left: 0; bottom: 0; right: auto;
+    width: 200px; flex-direction: column; justify-content: flex-start;
+    border-top: none; border-right: 1px solid var(--mullion);
+    padding: 74px 12px 16px;
+    overflow-x: visible; overflow-y: auto;
+  }
+  .nav-link { flex-direction: row; justify-content: flex-start; width: 100%; min-width: 0; }
+  .app-main { margin-left: 200px; padding-top: 88px; max-width: 960px; }
+}
+
+/* ------------------------------ Tarjetas de contenido ------------------------------ */
+
+.panel { padding: 16px; }
+.panel + .panel { margin-top: 14px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.panel-head h2 { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+
+.placeholder-panel {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+.placeholder-panel .figure { font-size: 22px; display: block; margin-bottom: 8px; color: var(--ink); }

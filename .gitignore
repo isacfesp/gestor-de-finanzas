@@ -1,5 +1,6 @@
 /target
 /docs
+frontend/dist/
 .env
 backend/.env
 CLAUDE.md

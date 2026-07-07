@@ -13,10 +13,6 @@ use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
 /// Rol efectivo del usuario dentro de un workspace concreto.
-// allow(dead_code): los consumidores de esta pieza son los módulos de
-// datos (accounting, goals...) que aún no existen. Quitar cuando llegue
-// el primero.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RolWorkspace {
     /// El rol dev pasa por encima de las membresías: ve todo.
@@ -35,8 +31,6 @@ pub enum RolWorkspace {
 /// Devuelve 404 (no 403) cuando no hay membresía: así un usuario ajeno
 /// no puede distinguir entre "ese workspace no existe" y "existe pero
 /// no es tuyo" — no se filtra ni la existencia del recurso.
-// allow(dead_code): ver nota en RolWorkspace.
-#[allow(dead_code)]
 pub async fn verificar_membresia(
     pool: &PgPool,
     usuario: &UsuarioAutenticado,

@@ -1,0 +1,69 @@
+//! Llamadas a `/auth/*`. Los structs reflejan exactamente lo que
+//! espera y devuelve `backend/src/auth/handlers.rs`.
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use super::client;
+use super::error::ApiError;
+
+#[derive(Serialize)]
+struct LoginDatos<'a> {
+    email: &'a str,
+    password: &'a str,
+}
+
+#[derive(Serialize)]
+struct RefreshDatos<'a> {
+    refresh_token: &'a str,
+}
+
+/// Par de tokens que entrega el backend al iniciar sesión o refrescar.
+/// El backend también manda `token_type` ("Bearer"), pero como nunca
+/// cambia no se modela aquí — serde ignora los campos que no se piden.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Tokens {
+    pub access_token: String,
+    pub refresh_token: String,
+    /// Segundos de vida del access token.
+    pub expires_in: i64,
+}
+
+/// Datos públicos del usuario autenticado (sin contraseña ni tokens).
+/// Serialize además de Deserialize porque se guarda tal cual en
+/// localStorage como parte de la sesión (ver `crate::auth::Sesion`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Usuario {
+    pub id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+}
+
+/// POST /auth/login
+pub async fn login(email: &str, password: &str) -> Result<Tokens, ApiError> {
+    client::post_publico("/auth/login", &LoginDatos { email, password }).await
+}
+
+// La usa crate::auth::token_vigente, que todavía no llama nadie porque
+// ninguna página protegida hace llamadas autenticadas propias aún.
+#[allow(dead_code)]
+/// POST /auth/refresh — cambia un refresh token por un par nuevo (rotación).
+pub async fn refresh(refresh_token: &str) -> Result<Tokens, ApiError> {
+    client::post_publico("/auth/refresh", &RefreshDatos { refresh_token }).await
+}
+
+/// POST /auth/logout — revoca el refresh token actual (responde 204).
+pub async fn logout(refresh_token: &str, access_token: &str) -> Result<(), ApiError> {
+    client::post_sin_respuesta(
+        "/auth/logout",
+        &RefreshDatos { refresh_token },
+        access_token,
+    )
+    .await
+}
+
+/// GET /auth/yo — datos del usuario autenticado.
+pub async fn yo(access_token: &str) -> Result<Usuario, ApiError> {
+    client::get("/auth/yo", access_token).await
+}
