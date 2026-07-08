@@ -12,7 +12,7 @@ pub fn Home() -> impl IntoView {
     let auth = use_auth();
 
     view! {
-        <section class="panel glass" style="padding: 22px 20px;">
+        <section class="panel" style="padding: 22px 20px;">
             <p class="eyebrow">"Sesión iniciada"</p>
             {move || {
                 auth.usuario()
@@ -29,7 +29,7 @@ pub fn Home() -> impl IntoView {
             }}
         </section>
 
-        <section class="panel glass placeholder-panel">
+        <section class="panel placeholder-panel">
             <span class="figure">"Resumen"</span>
             <p class="text-soft">"El balance, movimientos recientes y metas aparecerán aquí cuando conectemos el módulo accounting."</p>
         </section>

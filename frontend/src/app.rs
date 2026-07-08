@@ -13,24 +13,24 @@ use crate::pages::{Home, Login, NotFound, modulos};
 pub fn App() -> impl IntoView {
     crate::auth::provide_auth_context();
     provide_theme_context();
+    crate::workspace::provide_workspace_context();
 
     view! {
-        <div class="bg-glow"></div>
         <Router>
             <Routes fallback=|| view! { <NotFound/> }>
                 <Route path=path!("/login") view=Login/>
 
                 // Todo lo que cuelga de "/" pasa primero por ProtectedShell,
                 // que exige sesión y dibuja el encabezado + navegación antes
-                // de mostrar la página pedida en el <Outlet/>.
+                // de mostrar la página pedida en el <Outlet/>. Las 5
+                // secciones de navegación son las de docs/frontend-ia.md,
+                // no un mapeo 1:1 con los módulos del backend.
                 <ParentRoute path=path!("/") view=ProtectedShell>
                     <Route path=path!("") view=Home/>
-                    <Route path=path!("movimientos") view=modulos::MovimientosPage/>
                     <Route path=path!("cuentas") view=modulos::CuentasPage/>
-                    <Route path=path!("metas") view=modulos::MetasPage/>
+                    <Route path=path!("agenda") view=modulos::AgendaPage/>
                     <Route path=path!("inversiones") view=modulos::InversionesPage/>
-                    <Route path=path!("etiquetas") view=modulos::EtiquetasPage/>
-                    <Route path=path!("previstos") view=modulos::PrevistosPage/>
+                    <Route path=path!("movimientos") view=modulos::MovimientosPage/>
                 </ParentRoute>
             </Routes>
         </Router>

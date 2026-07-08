@@ -1,19 +1,14 @@
-//! Una página por módulo de negocio, reflejando 1:1 los módulos del
-//! backend (ver `backend/src/`). Hoy cada una solo muestra un
-//! placeholder; el trabajo de un módulo nuevo empieza reemplazando el
-//! cuerpo de su función aquí por la UI real, y agregando sus propias
-//! llamadas tipadas en `crate::api`.
+//! Una página por sección de navegación, según la arquitectura de
+//! información definida en `docs/frontend-ia.md` (no es 1:1 con los
+//! módulos del backend — varios backend módulos conviven en una sola
+//! pantalla, ej. Cuentas agrupa `accounts` + `accounting` + `tags`).
 
+mod agenda;
 mod cuentas;
-mod etiquetas;
 mod inversiones;
-mod metas;
 mod movimientos;
-mod previstos;
 
+pub use agenda::AgendaPage;
 pub use cuentas::CuentasPage;
-pub use etiquetas::EtiquetasPage;
 pub use inversiones::InversionesPage;
-pub use metas::MetasPage;
 pub use movimientos::MovimientosPage;
-pub use previstos::PrevistosPage;

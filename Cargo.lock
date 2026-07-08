@@ -733,6 +733,7 @@ dependencies = [
 name = "frontend"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "console_error_panic_hook",
  "console_log",
  "gloo-net 0.7.0",
@@ -742,6 +743,7 @@ dependencies = [
  "leptos_meta",
  "leptos_router",
  "log",
+ "rust_decimal",
  "serde",
  "serde_json",
  "uuid",

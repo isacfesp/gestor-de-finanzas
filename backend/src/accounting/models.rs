@@ -43,6 +43,10 @@ pub struct Transaccion {
     pub amount: Decimal,
     pub date: NaiveDate,
     pub category_id: Option<Uuid>,
+    /// Cuenta de la que sale (gasto) o a la que entra (ingreso) el
+    /// dinero. Crear/editar/borrar una transacción ajusta el saldo de
+    /// esta cuenta (ver `transacciones.rs`).
+    pub account_id: Uuid,
     pub description: Option<String>,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
@@ -57,6 +61,7 @@ pub struct DatosTransaccion {
     pub amount: Decimal,
     pub date: NaiveDate,
     pub category_id: Option<Uuid>,
+    pub account_id: Uuid,
     pub description: Option<String>,
 }
 

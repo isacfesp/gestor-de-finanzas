@@ -7,7 +7,7 @@ use leptos::prelude::*;
 #[component]
 pub fn Placeholder(titulo: &'static str, descripcion: &'static str) -> impl IntoView {
     view! {
-        <section class="panel glass placeholder-panel">
+        <section class="panel placeholder-panel">
             <span class="figure">{titulo}</span>
             <p class="text-soft">{descripcion}</p>
         </section>

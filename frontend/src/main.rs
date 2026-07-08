@@ -3,6 +3,7 @@ mod app;
 mod auth;
 mod components;
 mod pages;
+mod workspace;
 
 use app::App;
 
