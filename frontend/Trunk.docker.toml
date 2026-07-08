@@ -1,0 +1,25 @@
+# Variante de Trunk.toml usada solo dentro del contenedor de Docker Compose
+# (frontend/docker/Dockerfile: `trunk serve --config Trunk.docker.toml`).
+#
+# Difiere de Trunk.toml en dos cosas: escucha en 0.0.0.0 (no en 127.0.0.1,
+# que dentro de un contenedor no es alcanzable desde el host) y el proxy
+# apunta al servicio "app" de la red de compose en vez de a localhost.
+
+[build]
+target = "index.html"
+
+[watch]
+ignore = ["dist"]
+
+[serve]
+addresses = ["0.0.0.0"]
+port = 8080
+
+[[proxy]]
+backend = "http://app:3000/auth"
+
+[[proxy]]
+backend = "http://app:3000/admin"
+
+[[proxy]]
+backend = "http://app:3000/workspaces"

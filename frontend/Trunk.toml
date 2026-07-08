@@ -1,0 +1,21 @@
+[build]
+target = "index.html"
+
+[watch]
+ignore = ["dist"]
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080
+
+# En desarrollo el navegador ve todo bajo http://127.0.0.1:8080, así que
+# las llamadas a /auth, /admin y /workspaces se reenvían al backend real
+# sin necesidad de CORS (mismo origen desde el punto de vista del navegador).
+[[proxy]]
+backend = "http://localhost:3000/auth"
+
+[[proxy]]
+backend = "http://localhost:3000/admin"
+
+[[proxy]]
+backend = "http://localhost:3000/workspaces"

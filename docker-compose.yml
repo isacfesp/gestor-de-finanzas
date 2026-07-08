@@ -4,8 +4,8 @@
 # Compose lee las variables ${...} del archivo .env que está en esta misma
 # carpeta (la raíz). Por eso el .env vive aquí y no en backend/.
 #
-# A futuro el frontend se agrega como un servicio más (o se despliega fuera,
-# p. ej. Vercel); el backend no necesita cambios en ninguno de los dos casos.
+# Tres servicios: db (Postgres), app (backend, hot-reload con cargo-watch)
+# y frontend (Trunk sirviendo el SPA con hot-reload), en http://localhost:8080.
 
 services:
   db:
@@ -51,7 +51,31 @@ services:
         # así el pool de conexiones no falla por llegar antes que Postgres.
         condition: service_healthy
 
+  frontend:
+    build:
+      context: frontend/docker # ahí vive el Dockerfile; el código no se copia, se monta abajo
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mismo repo completo que "app": frontend/ es miembro del mismo
+      # workspace de Cargo y necesita ver el Cargo.toml/lock de la raíz.
+      - ./:/usr/src/app
+      # Cachés propias: no comparte target/ con "app" porque compila a
+      # wasm32 (un target distinto) y correrían en paralelo sobre el mismo
+      # directorio. El registro de crates sí se comparte, es solo lectura
+      # de paquetes ya descargados.
+      - cargo_cache:/usr/local/cargo/registry
+      - frontend_target_cache:/usr/src/app/target
+      # Binarios que Trunk descarga por su cuenta (wasm-bindgen, wasm-opt,
+      # dart-sass) para no volver a bajarlos en cada `docker compose up`.
+      - trunk_tools_cache:/root/.cache
+    depends_on:
+      - app
+
 volumes:
   db_data:
   cargo_cache:
   target_cache:
+  frontend_target_cache:
+  trunk_tools_cache:

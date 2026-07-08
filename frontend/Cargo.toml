@@ -1,0 +1,25 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+leptos_meta = "0.8"
+leptos_router = "0.8"
+console_log = "1"
+log = "0.4"
+console_error_panic_hook = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+gloo-net = { version = "0.7", features = ["json"] }
+gloo-storage = "0.3"
+uuid = { version = "1", features = ["serde"] }
+# serde-with-str: el backend serializa Decimal como string JSON (ej.
+# "150.00", no 150.00) para no perder precisión — mismo feature que usa
+# backend/Cargo.toml, así los montos viajan idénticos en ambos sentidos.
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+chrono = { version = "0.4", features = ["serde"] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "MediaQueryList"] }

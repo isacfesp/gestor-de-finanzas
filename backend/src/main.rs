@@ -1,14 +1,25 @@
+mod accounting;
+mod accounts;
 mod admin;
 mod auditoria;
 mod auth;
 mod errores;
+mod goals;
+mod investments;
+mod planned_transactions;
+mod tags;
 mod users;
 
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    http::{HeaderValue, Method, header},
+    routing::get,
+};
 use sqlx::PgPool;
 use std::error::Error;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use tower_http::cors::CorsLayer;
 
 /// Endpoint de diagnóstico: responde texto plano para comprobar
 /// que el servidor está vivo (GET /salud).
@@ -31,6 +42,31 @@ fn leer_puerto() -> Result<u16, Box<dyn Error>> {
         }),
         Err(_) => Ok(3000),
     }
+}
+
+/// Arma la política CORS: solo los orígenes del frontend pueden llamar
+/// a la API desde el navegador.
+///
+/// Lee FRONTEND_ORIGIN del .env (lista separada por comas). Si no está
+/// definida, cae en los puertos por defecto de `trunk serve` en
+/// desarrollo local. No se permiten credenciales de cookies porque la
+/// autenticación viaja en el header Authorization, no en cookies.
+fn construir_cors() -> CorsLayer {
+    let origenes_por_defecto = "http://localhost:8080,http://127.0.0.1:8080";
+    let origenes =
+        std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| origenes_por_defecto.to_string());
+
+    let valores: Vec<HeaderValue> = origenes
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|origen| origen.parse::<HeaderValue>().ok())
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(valores)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
 }
 
 /// Conecta con PostgreSQL y deja la base de datos lista para usarse.
@@ -99,10 +135,20 @@ async fn bootstrap_dev(pool: &PgPool) -> Result<(), Box<dyn Error>> {
 /// El pool se registra como estado compartido: cada handler puede
 /// pedirlo con el extractor State<PgPool>.
 fn construir_router(pool: PgPool) -> Router {
+    // Varios módulos se anidan bajo el mismo prefijo /workspaces/:workspace_id:
+    // axum combina sus árboles de rutas siempre que no compartan una misma
+    // ruta final y usen el mismo nombre de parámetro en cada posición.
     Router::new()
         .route("/salud", get(responder_salud))
         .nest("/auth", auth::router())
         .nest("/admin", admin::router())
+        .nest("/workspaces/:workspace_id", accounting::router())
+        .nest("/workspaces/:workspace_id", accounts::router())
+        .nest("/workspaces/:workspace_id", planned_transactions::router())
+        .nest("/workspaces/:workspace_id", tags::router())
+        .nest("/workspaces/:workspace_id", goals::router())
+        .nest("/workspaces/:workspace_id", investments::router())
+        .layer(construir_cors())
         .with_state(pool)
 }
 
