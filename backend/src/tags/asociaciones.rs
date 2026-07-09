@@ -8,9 +8,11 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -20,7 +22,8 @@ use crate::tags::models::AgregarEtiquetaDatos;
 /// no dejar etiquetar (o desetiquetar) recursos ajenos.
 async fn validar_transaccion(pool: &PgPool, id: Uuid, workspace_id: Uuid) -> Result<(), AppError> {
     let existe = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM transactions WHERE id = $1 AND workspace_id = $2)",
+        r#"SELECT EXISTS(SELECT 1 FROM transactions
+           WHERE id = $1 AND workspace_id = $2 AND is_active = true)"#,
         id,
         workspace_id
     )
@@ -48,7 +51,8 @@ pub async fn agregar(
     validar_transaccion(&pool, id, workspace_id).await?;
 
     let etiqueta_existe = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM tags WHERE id = $1 AND workspace_id = $2)",
+        r#"SELECT EXISTS(SELECT 1 FROM tags
+           WHERE id = $1 AND workspace_id = $2 AND is_active = true)"#,
         datos.tag_id,
         workspace_id
     )
@@ -69,6 +73,15 @@ pub async fn agregar(
     )
     .execute(&pool)
     .await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::ETIQUETA_ASOCIADA,
+        json!({"transaction_id": id, "tag_id": datos.tag_id}),
+    )
+    .await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -95,5 +108,13 @@ pub async fn quitar(
             "Esa transacción no tiene esa etiqueta".to_string(),
         ));
     }
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::ETIQUETA_DESASOCIADA,
+        json!({"transaction_id": id, "tag_id": tag_id}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

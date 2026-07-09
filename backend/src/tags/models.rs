@@ -12,6 +12,7 @@ pub struct Etiqueta {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub name: String,
+    pub is_active: bool,
 }
 
 #[derive(Debug, Deserialize)]

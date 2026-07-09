@@ -12,10 +12,12 @@ use axum::{
     http::StatusCode,
 };
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounts::models::{CrearTransferenciaDatos, FiltrosTransferencias, Transferencia};
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -110,6 +112,20 @@ pub async fn crear(
     .await?;
 
     tx.commit().await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::TRANSFERENCIA_CREADA,
+        json!({
+            "transferencia_id": transferencia.id,
+            "from_account_id": transferencia.from_account_id,
+            "to_account_id": transferencia.to_account_id,
+            "amount": transferencia.amount,
+        }),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(transferencia)))
 }

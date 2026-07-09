@@ -6,9 +6,15 @@
 pub mod accounting;
 pub mod accounts;
 pub mod admin;
+pub mod agenda;
+pub mod analytics;
 pub mod auth;
 mod client;
 mod error;
+pub mod goals;
+pub mod investments;
+pub mod movimientos;
+pub mod reminders;
 pub mod tags;
 
 pub use error::ApiError;

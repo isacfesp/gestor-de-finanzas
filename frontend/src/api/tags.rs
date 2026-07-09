@@ -42,6 +42,17 @@ pub async fn crear_etiqueta(
     .await
 }
 
+/// DELETE /workspaces/:workspace_id/etiquetas/:id — borrado lógico: el
+/// backend la marca inactiva, no la borra físicamente (ver
+/// `backend/src/tags/etiquetas.rs`).
+pub async fn desactivar_etiqueta(
+    workspace_id: Uuid,
+    id: Uuid,
+    token: &str,
+) -> Result<(), ApiError> {
+    client::delete(&format!("/workspaces/{workspace_id}/etiquetas/{id}"), token).await
+}
+
 /// POST /workspaces/:workspace_id/transacciones/:id/etiquetas — asocia
 /// una etiqueta ya existente a una transacción.
 pub async fn agregar_etiqueta_a_transaccion(

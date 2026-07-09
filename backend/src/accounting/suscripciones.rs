@@ -9,6 +9,7 @@ use axum::{
 };
 use chrono::{Months, NaiveDate, Utc};
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -17,6 +18,7 @@ use crate::accounting::models::{
     ActualizarSuscripcionDatos, CrearSuscripcionDatos, FiltroProximosCobros, FiltrosSuscripciones,
     Suscripcion,
 };
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -105,6 +107,15 @@ pub async fn crear(
     )
     .fetch_one(&pool)
     .await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::SUSCRIPCION_CREADA,
+        json!({"suscripcion_id": fila.id, "name": fila.name}),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(fila)))
 }
@@ -199,6 +210,15 @@ pub async fn actualizar(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::SUSCRIPCION_EDITADA,
+        json!({"suscripcion_id": fila.id}),
+    )
+    .await;
+
     Ok(Json(fila))
 }
 
@@ -243,6 +263,15 @@ pub async fn marcar_cobrada(
     .fetch_one(&pool)
     .await?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::SUSCRIPCION_COBRADA,
+        json!({"suscripcion_id": fila.id, "next_billing_date": fila.next_billing_date}),
+    )
+    .await;
+
     Ok(Json(fila))
 }
 
@@ -267,5 +296,13 @@ pub async fn eliminar(
             "Suscripción no encontrada".to_string(),
         ));
     }
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::SUSCRIPCION_ELIMINADA,
+        json!({"suscripcion_id": id}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -7,9 +7,11 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -34,7 +36,7 @@ pub async fn crear(
         Etiqueta,
         r#"INSERT INTO tags (workspace_id, name)
            VALUES ($1, $2)
-           RETURNING id, workspace_id, name"#,
+           RETURNING id, workspace_id, name, is_active"#,
         workspace_id,
         datos.name.trim()
     )
@@ -42,7 +44,17 @@ pub async fn crear(
     .await;
 
     match resultado {
-        Ok(etiqueta) => Ok((StatusCode::CREATED, Json(etiqueta))),
+        Ok(etiqueta) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::ETIQUETA_CREADA,
+                json!({"tag_id": etiqueta.id, "name": etiqueta.name}),
+            )
+            .await;
+            Ok((StatusCode::CREATED, Json(etiqueta)))
+        }
         Err(sqlx::Error::Database(e)) if e.constraint() == Some("tags_workspace_name_unique") => {
             Err(AppError::Conflicto(
                 "Ya existe una etiqueta con ese nombre en este workspace".to_string(),
@@ -52,7 +64,7 @@ pub async fn crear(
     }
 }
 
-/// GET /workspaces/:workspace_id/etiquetas
+/// GET /workspaces/:workspace_id/etiquetas — solo las activas.
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -62,7 +74,9 @@ pub async fn listar(
 
     let filas = sqlx::query_as!(
         Etiqueta,
-        r#"SELECT id, workspace_id, name FROM tags WHERE workspace_id = $1 ORDER BY name"#,
+        r#"SELECT id, workspace_id, name, is_active FROM tags
+           WHERE workspace_id = $1 AND is_active = true
+           ORDER BY name"#,
         workspace_id
     )
     .fetch_all(&pool)
@@ -71,7 +85,10 @@ pub async fn listar(
     Ok(Json(filas))
 }
 
-/// DELETE /workspaces/:workspace_id/etiquetas/:id
+/// DELETE /workspaces/:workspace_id/etiquetas/:id — borrado lógico: la
+/// etiqueta queda en la base (para no romper el historial de
+/// transacciones ya etiquetadas) pero deja de listarse y de poder
+/// asignarse a nuevas transacciones.
 pub async fn eliminar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -80,7 +97,7 @@ pub async fn eliminar(
     verificar_membresia(&pool, &usuario, workspace_id).await?;
 
     let resultado = sqlx::query!(
-        "DELETE FROM tags WHERE id = $1 AND workspace_id = $2",
+        "UPDATE tags SET is_active = false WHERE id = $1 AND workspace_id = $2 AND is_active = true",
         id,
         workspace_id
     )
@@ -90,5 +107,13 @@ pub async fn eliminar(
     if resultado.rows_affected() == 0 {
         return Err(AppError::NoEncontrado("Etiqueta no encontrada".to_string()));
     }
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::ETIQUETA_ELIMINADA,
+        json!({"tag_id": id}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

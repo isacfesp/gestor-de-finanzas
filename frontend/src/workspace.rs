@@ -1,13 +1,10 @@
 //! Workspace activo de la sesión.
 //!
-//! Atajo interino: todavía no existe un endpoint de autoservicio para
-//! que un usuario normal liste sus propios workspaces (pendiente
-//! conocido, anotado en `CLAUDE.md`). Mientras tanto, se reutiliza
-//! `GET /admin/workspaces` (solo `dev`) y se toma el primero como
-//! activo — hoy el único usuario que existe es el `dev` de bootstrap.
-//! Cuando exista el endpoint real, solo hay que cambiar
-//! `cargar_activo`; `use_workspace()` sigue devolviendo lo mismo a
-//! quien lo consuma.
+//! Se resuelve con `GET /auth/mis-workspaces` y se toma el primero
+//! como activo. Ese endpoint ya distingue el rol del usuario (un dev
+//! ve todos los tenants, un usuario normal solo los suyos) — antes se
+//! usaba `GET /admin/workspaces` (solo `dev`) como atajo interino,
+//! documentado como pendiente en `CLAUDE.md`; ya está resuelto.
 
 use leptos::prelude::*;
 
@@ -17,7 +14,7 @@ use crate::auth::{AuthContext, token_vigente};
 #[derive(Debug, Clone)]
 enum Estado {
     Cargando,
-    Listo(api::admin::Workspace),
+    Listo(api::auth::WorkspaceResumen),
     Error(String),
 }
 
@@ -78,11 +75,11 @@ pub async fn cargar_activo(auth: AuthContext, workspace: WorkspaceContext) {
         return;
     };
 
-    match api::admin::listar_workspaces(&token).await {
+    match api::auth::mis_workspaces(&token).await {
         Ok(lista) => match lista.into_iter().next() {
             Some(primero) => workspace.0.set(Estado::Listo(primero)),
             None => workspace.0.set(Estado::Error(
-                "Todavía no hay ningún workspace creado".to_string(),
+                "Todavía no hay ningún workspace asignado".to_string(),
             )),
         },
         Err(error) => workspace.0.set(Estado::Error(error.to_string())),

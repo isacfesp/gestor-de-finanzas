@@ -39,6 +39,14 @@ impl AuthContext {
         self.sesion.get().map(|s| s.usuario)
     }
 
+    /// Rol global `dev` — mismo nombre que usa el backend
+    /// (`UsuarioAutenticado::es_dev`), para no repetir la comparación
+    /// de string en cada lugar que necesite filtrar por rol (nav,
+    /// guard de la página Admin).
+    pub fn es_dev(&self) -> bool {
+        self.usuario().map(|u| u.role == "dev").unwrap_or(false)
+    }
+
     fn establecer(&self, sesion: Sesion) {
         // Si guardar en localStorage falla (modo privado, cuota llena),
         // la sesión sigue funcionando en memoria para esta pestaña.

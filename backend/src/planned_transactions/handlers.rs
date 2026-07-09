@@ -8,11 +8,13 @@ use axum::{
     http::StatusCode,
 };
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounting::categorias::validar_categoria;
 use crate::accounts::validar_cuenta;
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -85,6 +87,15 @@ pub async fn crear(
     .fetch_one(&pool)
     .await?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::PREVISTO_CREADO,
+        json!({"previsto_id": fila.id, "type": fila.tipo, "amount": fila.amount}),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(fila)))
 }
 
@@ -149,6 +160,15 @@ pub async fn actualizar(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Previsto no encontrado".to_string()))?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::PREVISTO_EDITADO,
+        json!({"previsto_id": fila.id}),
+    )
+    .await;
+
     Ok(Json(fila))
 }
 
@@ -173,6 +193,15 @@ pub async fn marcar_pagado(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Previsto no encontrado".to_string()))?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::PREVISTO_PAGADO,
+        json!({"previsto_id": fila.id, "amount": fila.amount}),
+    )
+    .await;
+
     Ok(Json(fila))
 }
 
@@ -195,5 +224,13 @@ pub async fn eliminar(
     if resultado.rows_affected() == 0 {
         return Err(AppError::NoEncontrado("Previsto no encontrado".to_string()));
     }
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::PREVISTO_ELIMINADO,
+        json!({"previsto_id": id}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

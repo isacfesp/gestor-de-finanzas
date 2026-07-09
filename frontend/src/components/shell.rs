@@ -6,8 +6,10 @@
 
 use leptos::prelude::*;
 use leptos_router::components::{A, Outlet, Redirect};
+use uuid::Uuid;
 
 use crate::auth::{cerrar_sesion, use_auth};
+use crate::components::notificaciones::CampanaNotificaciones;
 use crate::components::theme::use_theme;
 use crate::workspace::use_workspace;
 
@@ -37,6 +39,10 @@ fn icono(kind: &str) -> AnyView {
         .into_any(),
         "trend" => view! {
             <path d="M4 16l5-5 4 4 7-8"></path><path d="M15 7h5v5"></path>
+        }
+        .into_any(),
+        "shield" => view! {
+            <path d="M12 3.5 19 6.5v5c0 5-3.2 7.8-7 9-3.8-1.2-7-4-7-9v-5z"></path><path d="M9 12l2 2 4-4.5"></path>
         }
         .into_any(),
         // "calendar" (Agenda) y cualquier otro caso caen aquí.
@@ -71,8 +77,7 @@ pub fn ProtectedShell() -> impl IntoView {
 
     // Se resuelve una sola vez, en cuanto hay sesión (el shell envuelve
     // todas las rutas protegidas y no se vuelve a montar al navegar
-    // entre ellas). Ver `crate::workspace` — es un atajo interino
-    // mientras no exista un endpoint de autoservicio.
+    // entre ellas). Ver `crate::workspace::cargar_activo`.
     Effect::new(move |_| {
         if auth.is_logged_in() {
             leptos::task::spawn_local(async move {
@@ -103,6 +108,15 @@ pub fn ProtectedShell() -> impl IntoView {
                         })
                         .collect_view()}
 
+                    // Admin no vive en NAV_ITEMS (esa lista es estática,
+                    // sin lógica) porque solo el rol dev debe verlo.
+                    <Show when=move || auth.es_dev()>
+                        <A href="/admin" exact=true attr:class="nav-link">
+                            <svg viewBox="0 0 24 24">{icono("shield")}</svg>
+                            <span>"Admin"</span>
+                        </A>
+                    </Show>
+
                     <div class="app-nav-help">
                         <p>"¿Necesitas ayuda?"</p>
                         <p class="text-soft">"Revisa la guía de geck"</p>
@@ -125,12 +139,15 @@ pub fn ProtectedShell() -> impl IntoView {
                                 }.into_any(),
                             }}
                         </button>
-                        <button class="app-user-btn">
+                        <Show when=move || workspace.id().is_some()>
+                            <CampanaNotificaciones workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+                        </Show>
+                        <A href="/perfil" attr:class="app-user-btn">
                             <span class="avatar">
                                 {move || auth.usuario().map(|u| iniciales(&u.name)).unwrap_or_default()}
                             </span>
                             <span>{move || auth.usuario().map(|u| u.name).unwrap_or_default()}</span>
-                        </button>
+                        </A>
                         <button class="app-icon-btn" title="Cerrar sesión" on:click=salir>
                             <svg viewBox="0 0 24 24">
                                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>

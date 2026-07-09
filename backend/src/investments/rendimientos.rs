@@ -10,9 +10,11 @@ use axum::{
     http::StatusCode,
 };
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -67,6 +69,15 @@ pub async fn registrar(
     )
     .fetch_one(&pool)
     .await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::RENDIMIENTO_REGISTRADO,
+        json!({"investment_id": id, "yield_amount": fila.yield_amount}),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(fila)))
 }

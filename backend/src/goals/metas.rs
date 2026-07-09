@@ -8,9 +8,11 @@ use axum::{
     http::StatusCode,
 };
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -55,6 +57,15 @@ pub async fn crear(
     )
     .fetch_one(&pool)
     .await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::META_CREADA,
+        json!({"meta_id": fila.id, "name": fila.name}),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(fila)))
 }
@@ -120,6 +131,15 @@ pub async fn actualizar(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Meta no encontrada".to_string()))?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::META_EDITADA,
+        json!({"meta_id": fila.id}),
+    )
+    .await;
+
     Ok(Json(fila))
 }
 
@@ -143,7 +163,17 @@ pub async fn eliminar(
         Ok(r) if r.rows_affected() == 0 => {
             Err(AppError::NoEncontrado("Meta no encontrada".to_string()))
         }
-        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Ok(_) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::META_ELIMINADA,
+                json!({"meta_id": id}),
+            )
+            .await;
+            Ok(StatusCode::NO_CONTENT)
+        }
         // La meta está referenciada por transacciones con goal_id.
         Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23503") => Err(
             AppError::Conflicto("La meta está en uso, no se puede eliminar".to_string()),

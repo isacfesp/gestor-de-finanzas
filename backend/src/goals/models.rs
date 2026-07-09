@@ -80,3 +80,18 @@ pub struct ProyeccionMeta {
     pub periodos_restantes: i64,
     pub aporte_necesario: Decimal,
 }
+
+/// Un aporte visto desde afuera: la transacción que lo originó.
+#[derive(Debug, Serialize)]
+pub struct Aporte {
+    pub id: Uuid,
+    #[serde(rename = "type")]
+    pub tipo: String,
+    pub amount: Decimal,
+    pub date: NaiveDate,
+    pub description: Option<String>,
+    /// Nombre de quién registró el aporte — la meta es colaborativa
+    /// entre varios miembros del workspace, así que el historial debe
+    /// distinguir quién dejó cada monto.
+    pub created_by_name: String,
+}

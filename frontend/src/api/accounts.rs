@@ -11,6 +11,9 @@ use super::error::ApiError;
 
 // -------------------------------- Cuentas --------------------------------
 
+/// Para `tipo == "credit"`, `balance` es deuda (negativo cuando hay algo
+/// usado) y `credit_limit` el límite de la tarjeta; para el resto de
+/// los tipos `credit_limit` es `None`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cuenta {
     pub id: Uuid,
@@ -20,6 +23,7 @@ pub struct Cuenta {
     pub balance: Decimal,
     pub currency: String,
     pub is_active: bool,
+    pub credit_limit: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,6 +33,7 @@ pub struct CrearCuentaDatos<'a> {
     pub tipo: &'a str,
     pub balance: Option<Decimal>,
     pub currency: Option<&'a str>,
+    pub credit_limit: Option<Decimal>,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,6 +43,7 @@ pub struct ActualizarCuentaDatos<'a> {
     pub tipo: &'a str,
     pub currency: &'a str,
     pub is_active: bool,
+    pub credit_limit: Option<Decimal>,
 }
 
 /// GET /workspaces/:workspace_id/cuentas
@@ -93,12 +99,32 @@ pub struct CrearTransferenciaDatos<'a> {
     pub description: Option<&'a str>,
 }
 
-/// GET /workspaces/:workspace_id/transferencias
+/// GET /workspaces/:workspace_id/transferencias — con rango de fechas
+/// opcional (mismo filtro que usa el listado de transacciones, para que
+/// la vista combinada de la pestaña Transacciones respete un solo rango).
 pub async fn listar_transferencias(
     workspace_id: Uuid,
+    desde: Option<NaiveDate>,
+    hasta: Option<NaiveDate>,
     token: &str,
 ) -> Result<Vec<Transferencia>, ApiError> {
-    client::get(&format!("/workspaces/{workspace_id}/transferencias"), token).await
+    let mut partes = Vec::new();
+    if let Some(desde) = desde {
+        partes.push(format!("desde={desde}"));
+    }
+    if let Some(hasta) = hasta {
+        partes.push(format!("hasta={hasta}"));
+    }
+    let query = if partes.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", partes.join("&"))
+    };
+    client::get(
+        &format!("/workspaces/{workspace_id}/transferencias{query}"),
+        token,
+    )
+    .await
 }
 
 /// POST /workspaces/:workspace_id/transferencias

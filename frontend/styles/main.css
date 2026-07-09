@@ -119,6 +119,16 @@ button {
   --hover: rgba(255, 255, 255, .05);
   --sidebar: #0a1230;
   --glass: rgba(12, 23, 56, .72);
+  /* Paleta categórica (skill dataviz, references/palette.md) — orden fijo,
+     nunca ciclada. Una 9ª categoría en adelante se pliega en "Otros". */
+  --series-1: #3987e5;
+  --series-2: #199e70;
+  --series-3: #c98500;
+  --series-4: #008300;
+  --series-5: #9085e9;
+  --series-6: #e66767;
+  --series-7: #d55181;
+  --series-8: #d95926;
 }
 
 @media (prefers-color-scheme: light) {
@@ -144,6 +154,14 @@ button {
     --hover: rgba(9, 20, 54, .045);
     --sidebar: #ffffff;
     --glass: rgba(255, 255, 255, .78);
+    --series-1: #2a78d6;
+    --series-2: #1baf7a;
+    --series-3: #eda100;
+    --series-4: #008300;
+    --series-5: #4a3aa7;
+    --series-6: #e34948;
+    --series-7: #e87ba4;
+    --series-8: #eb6834;
   }
 }
 
@@ -169,6 +187,14 @@ button {
   --hover: rgba(255, 255, 255, .05);
   --sidebar: #0a1230;
   --glass: rgba(12, 23, 56, .72);
+  --series-1: #3987e5;
+  --series-2: #199e70;
+  --series-3: #c98500;
+  --series-4: #008300;
+  --series-5: #9085e9;
+  --series-6: #e66767;
+  --series-7: #d55181;
+  --series-8: #d95926;
 }
 
 :root[data-theme="light"] {
@@ -193,6 +219,14 @@ button {
   --hover: rgba(9, 20, 54, .045);
   --sidebar: #ffffff;
   --glass: rgba(255, 255, 255, .78);
+  --series-1: #2a78d6;
+  --series-2: #1baf7a;
+  --series-3: #eda100;
+  --series-4: #008300;
+  --series-5: #4a3aa7;
+  --series-6: #e34948;
+  --series-7: #e87ba4;
+  --series-8: #eb6834;
 }
 
 /* ------------------------------ Tipografía ------------------------------ */
@@ -862,7 +896,6 @@ button {
 }
 
 .app-user-btn {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -891,6 +924,7 @@ button {
 }
 
 .app-icon-btn {
+  position: relative;
   width: 40px;
   height: 40px;
   border-radius: var(--radius-sm);
@@ -901,6 +935,12 @@ button {
   color: var(--muted);
   background: transparent;
   flex: none;
+}
+
+/* La campana empuja a sí misma (y a todo lo que sigue: avatar, logout)
+   al borde derecho — antes ese trabajo lo hacía .app-user-btn. */
+.app-notif-btn {
+  margin-left: auto;
 }
 
 .app-icon-btn:hover {
@@ -1074,6 +1114,84 @@ button {
   text-align: right;
 }
 
+/* Envuelve toda .data-table: si el contenido es más ancho que el panel
+   (muchas columnas, viewport angosto), scrollea en vez de desbordar el
+   contenedor. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+/* -------------------------- Menú de fila (engranaje) -------------------------- */
+/* Reemplaza los botones de acción inline en las filas de una tabla: un
+   ícono de engranaje que despliega Editar/Borrar, para no desbordar la
+   fila en viewports angostos o con muchas columnas. */
+
+.menu-gear {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-gear-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  color: var(--faint);
+}
+
+.menu-gear-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.menu-gear-btn svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* La posición (top/right) se fija por JS al abrir, vía estilo inline —
+   ver `abrir_menu()` en cada `Menu*` del frontend. El menú se monta con
+   `<Portal>` directo en `<body>`, no dentro de `.table-scroll`: si
+   quedara ahí, el `overflow-x: auto` de esa clase fuerza a `overflow-y`
+   a valer `auto` también (regla de CSS Overflow), y en una tabla de
+   pocas filas el menú se recorta antes de alcanzar su alto completo. */
+.menu-dropdown {
+  position: fixed;
+  z-index: 10;
+  min-width: 120px;
+  background: var(--panel);
+  border: 1px solid var(--card-line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, .35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text);
+}
+
+.menu-item:hover {
+  background: var(--hover);
+}
+
+.menu-item.is-danger {
+  color: var(--negative);
+}
+
 /* ------------------------------ Chips ------------------------------ */
 
 .chip {
@@ -1148,4 +1266,191 @@ button {
 
 .row-actions button:hover {
   color: var(--text);
+}
+
+/* ------------------------------ Presupuestos ------------------------------ */
+/* Tarjeta con barra de progreso gastado/límite, módulo Agenda. */
+
+.budget-card {
+  border: 1px solid var(--card-line);
+  border-radius: var(--radius-pane);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+
+.budget-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.budget-card-head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.budget-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--hover);
+  overflow: hidden;
+}
+
+.budget-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width .2s ease;
+}
+
+.budget-fill.is-warning {
+  background: var(--warning);
+}
+
+.budget-fill.is-over {
+  background: var(--negative);
+}
+
+/* ------------------------------ Dashboard: KPIs ------------------------------ */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.stat-tile {
+  background: var(--panel);
+  border: 1px solid var(--card-line);
+  border-radius: var(--radius-pane);
+  padding: 14px 16px;
+}
+
+.stat-tile .stat-label {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stat-tile .stat-value {
+  margin: 6px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* ------------------- Dashboard: distribución de gastos ------------------- */
+/* Barra horizontal apilada (part-to-whole) — la forma que indica la
+   skill dataviz para categorías de nombre largo, nunca donut. El gap
+   entre segmentos usa el color de fondo real del panel como "corte",
+   no un borde — mismo principio que separa las barras de .budget-*. */
+
+.series-track {
+  display: flex;
+  height: 22px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--card);
+  gap: 2px;
+}
+
+.series-segment {
+  height: 100%;
+}
+
+.series-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.series-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.series-legend-item .series-amount {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.series-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* --------------------------- Campana de notificaciones --------------------------- */
+
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--negative);
+  color: #fff;
+  font: 700 10px var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+
+.notif-dropdown {
+  position: fixed;
+  width: 340px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--card-line);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, .35);
+  z-index: 10;
+}
+
+.notif-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item:hover {
+  background: var(--hover);
+}
+
+.notif-item h5 {
+  margin: 0 0 2px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.notif-item p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.notif-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
 }

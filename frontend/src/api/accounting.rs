@@ -11,9 +11,12 @@ use super::error::ApiError;
 
 // ------------------------------- Categorías -------------------------------
 
+/// `workspace_id` es `None` para una categoría global (visible desde
+/// cualquier workspace, no se puede borrar) y `Some` para una propia.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Categoria {
     pub id: Uuid,
+    pub workspace_id: Option<Uuid>,
     pub name: String,
     #[serde(rename = "type")]
     pub tipo: String,
@@ -43,6 +46,16 @@ pub async fn crear_categoria(
     client::post(
         &format!("/workspaces/{workspace_id}/categorias"),
         datos,
+        token,
+    )
+    .await
+}
+
+/// DELETE /workspaces/:workspace_id/categorias/:id — solo categorías
+/// propias; 409 si está en uso (transacciones, suscripciones, etc.).
+pub async fn eliminar_categoria(workspace_id: Uuid, id: Uuid, token: &str) -> Result<(), ApiError> {
+    client::delete(
+        &format!("/workspaces/{workspace_id}/categorias/{id}"),
         token,
     )
     .await

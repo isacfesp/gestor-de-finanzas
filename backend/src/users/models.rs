@@ -26,6 +26,7 @@ pub struct RespuestaUsuario {
     pub name: String,
     pub email: String,
     pub role: String,
+    pub is_active: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -36,6 +37,7 @@ impl From<User> for RespuestaUsuario {
             name: u.name,
             email: u.email,
             role: u.role,
+            is_active: u.is_active,
             created_at: u.created_at,
         }
     }

@@ -9,9 +9,11 @@ use axum::{
     http::StatusCode,
 };
 use chrono::Days;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -65,6 +67,15 @@ pub async fn crear(
     )
     .fetch_one(&pool)
     .await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::INVERSION_CREADA,
+        json!({"inversion_id": fila.id, "name": fila.name}),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(fila)))
 }
@@ -140,6 +151,14 @@ pub async fn eliminar(
             "Inversión no encontrada".to_string(),
         ));
     }
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::INVERSION_ELIMINADA,
+        json!({"inversion_id": id}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 

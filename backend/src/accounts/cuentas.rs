@@ -7,10 +7,13 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounts::models::{ActualizarCuentaDatos, CrearCuentaDatos, Cuenta, FiltrosCuentas};
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -25,6 +28,25 @@ fn validar_tipo(tipo: &str) -> Result<(), AppError> {
             "El tipo debe ser una de: {}",
             TIPOS_CUENTA.join(", ")
         )))
+    }
+}
+
+/// Las tarjetas de crédito son el único tipo con límite: lo exige mayor
+/// a cero. Para el resto de los tipos lo ignora (siempre `None`) sin
+/// importar lo que haya mandado el cliente — así una cuenta que deja de
+/// ser `credit` no se queda con un límite huérfano.
+fn normalizar_credit_limit(
+    tipo: &str,
+    credit_limit: Option<Decimal>,
+) -> Result<Option<Decimal>, AppError> {
+    if tipo != "credit" {
+        return Ok(None);
+    }
+    match credit_limit {
+        Some(limite) if limite > Decimal::ZERO => Ok(Some(limite)),
+        _ => Err(AppError::NoProcesable(
+            "Las tarjetas de crédito requieren un límite mayor a cero".to_string(),
+        )),
     }
 }
 
@@ -68,26 +90,38 @@ pub async fn crear(
         ));
     }
 
-    let balance_inicial = datos.balance.unwrap_or(rust_decimal::Decimal::ZERO);
+    let credit_limit = normalizar_credit_limit(&datos.tipo, datos.credit_limit)?;
+    let balance_inicial = datos.balance.unwrap_or(Decimal::ZERO);
     let moneda = datos.currency.unwrap_or_else(|| "MXN".to_string());
 
     let resultado = sqlx::query_as!(
         Cuenta,
-        r#"INSERT INTO accounts (workspace_id, name, type, balance, currency)
-           VALUES ($1, $2, $3, $4, $5)
+        r#"INSERT INTO accounts (workspace_id, name, type, balance, currency, credit_limit)
+           VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING id, workspace_id, name, type AS "tipo", balance, currency,
-                     is_active, created_at"#,
+                     is_active, credit_limit, created_at"#,
         workspace_id,
         datos.name.trim(),
         datos.tipo,
         balance_inicial,
-        moneda
+        moneda,
+        credit_limit
     )
     .fetch_one(&pool)
     .await;
 
     match resultado {
-        Ok(cuenta) => Ok((StatusCode::CREATED, Json(cuenta))),
+        Ok(cuenta) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::CUENTA_CREADA,
+                json!({"cuenta_id": cuenta.id, "name": cuenta.name}),
+            )
+            .await;
+            Ok((StatusCode::CREATED, Json(cuenta)))
+        }
         Err(sqlx::Error::Database(e))
             if e.constraint() == Some("accounts_workspace_name_unique") =>
         {
@@ -111,7 +145,7 @@ pub async fn listar(
     let filas = sqlx::query_as!(
         Cuenta,
         r#"SELECT id, workspace_id, name, type AS "tipo", balance, currency,
-                  is_active, created_at
+                  is_active, credit_limit, created_at
            FROM accounts
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
@@ -141,17 +175,20 @@ pub async fn actualizar(
         ));
     }
 
+    let credit_limit = normalizar_credit_limit(&datos.tipo, datos.credit_limit)?;
+
     let resultado = sqlx::query_as!(
         Cuenta,
         r#"UPDATE accounts
-           SET name = $1, type = $2, currency = $3, is_active = $4
-           WHERE id = $5 AND workspace_id = $6
+           SET name = $1, type = $2, currency = $3, is_active = $4, credit_limit = $5
+           WHERE id = $6 AND workspace_id = $7
            RETURNING id, workspace_id, name, type AS "tipo", balance, currency,
-                     is_active, created_at"#,
+                     is_active, credit_limit, created_at"#,
         datos.name.trim(),
         datos.tipo,
         datos.currency,
         datos.is_active,
+        credit_limit,
         id,
         workspace_id
     )
@@ -159,7 +196,17 @@ pub async fn actualizar(
     .await;
 
     match resultado {
-        Ok(Some(cuenta)) => Ok(Json(cuenta)),
+        Ok(Some(cuenta)) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::CUENTA_EDITADA,
+                json!({"cuenta_id": cuenta.id, "name": cuenta.name}),
+            )
+            .await;
+            Ok(Json(cuenta))
+        }
         Ok(None) => Err(AppError::NoEncontrado("Cuenta no encontrada".to_string())),
         Err(sqlx::Error::Database(e))
             if e.constraint() == Some("accounts_workspace_name_unique") =>
@@ -192,7 +239,17 @@ pub async fn eliminar(
         Ok(r) if r.rows_affected() == 0 => {
             Err(AppError::NoEncontrado("Cuenta no encontrada".to_string()))
         }
-        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Ok(_) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::CUENTA_ELIMINADA,
+                json!({"cuenta_id": id}),
+            )
+            .await;
+            Ok(StatusCode::NO_CONTENT)
+        }
         // La cuenta está referenciada por transferencias o previstos.
         Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23503") => Err(
             AppError::Conflicto("La cuenta está en uso, no se puede eliminar".to_string()),

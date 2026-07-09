@@ -9,11 +9,13 @@ use axum::{
 };
 use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounting::categorias::validar_categoria;
 use crate::accounting::models::{CrearPresupuestoDatos, EstadoPresupuesto, FiltroMes, Presupuesto};
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -65,6 +67,15 @@ pub async fn crear(
     )
     .fetch_one(&pool)
     .await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::PRESUPUESTO_GUARDADO,
+        json!({"presupuesto_id": fila.id, "month": fila.month, "limit_amount": fila.limit_amount}),
+    )
+    .await;
 
     Ok((StatusCode::CREATED, Json(fila)))
 }
@@ -121,6 +132,7 @@ pub async fn estado(
                ON t.category_id = b.category_id
               AND t.workspace_id = b.workspace_id
               AND t.type = 'expense'
+              AND t.is_active = true
               AND date_trunc('month', t.date) = b.month
            WHERE b.workspace_id = $1 AND b.month = $2
            GROUP BY b.id, c.name
@@ -155,5 +167,13 @@ pub async fn eliminar(
             "Presupuesto no encontrado".to_string(),
         ));
     }
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::PRESUPUESTO_ELIMINADO,
+        json!({"presupuesto_id": id}),
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

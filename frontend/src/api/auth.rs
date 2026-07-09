@@ -67,3 +67,21 @@ pub async fn logout(refresh_token: &str, access_token: &str) -> Result<(), ApiEr
 pub async fn yo(access_token: &str) -> Result<Usuario, ApiError> {
     client::get("/auth/yo", access_token).await
 }
+
+/// Workspace visible para el usuario autenticado — lo mínimo que
+/// necesita `crate::workspace` para resolver el activo, sin los campos
+/// que solo le hacen falta al panel de administración
+/// (`api::admin::Workspace` ya trae `created_at`/`miembros`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspaceResumen {
+    pub id: Uuid,
+    pub name: String,
+}
+
+/// GET /auth/mis-workspaces — cualquier usuario autenticado. Un dev ve
+/// todos los tenants; un usuario normal solo los que tiene asignados.
+/// Resuelve el pendiente anotado en `CLAUDE.md` sobre el selector de
+/// workspace activo.
+pub async fn mis_workspaces(access_token: &str) -> Result<Vec<WorkspaceResumen>, ApiError> {
+    client::get("/auth/mis-workspaces", access_token).await
+}

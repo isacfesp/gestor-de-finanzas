@@ -18,7 +18,7 @@ use crate::auditoria::{self, acciones};
 use crate::auth::extractores::SoloDev;
 use crate::auth::tokens;
 use crate::errores::AppError;
-use crate::users::models::RespuestaUsuario;
+use crate::users::models::{RespuestaUsuario, User};
 use crate::users::servicio;
 
 /// Valida un rol de workspace (el CHECK de la tabla acepta solo estos).
@@ -80,6 +80,7 @@ pub async fn crear_usuario(
 
     auditoria::registrar(
         &pool,
+        None,
         Some(dev.id),
         acciones::USUARIO_CREADO,
         json!({"nuevo_usuario_id": usuario.id, "email": usuario.email}),
@@ -87,6 +88,24 @@ pub async fn crear_usuario(
     .await;
 
     Ok((StatusCode::CREATED, Json(usuario.into())))
+}
+
+// ------------------------- GET /admin/usuarios -------------------------
+
+/// Lista todos los usuarios del sistema — hace falta para poder elegir
+/// a quién desactivar/reactivar desde el panel (esos endpoints piden el
+/// `id` en la ruta, y hasta ahora no había forma de conocerlo).
+pub async fn listar_usuarios(
+    State(pool): State<PgPool>,
+    SoloDev(_dev): SoloDev,
+) -> Result<Json<Vec<RespuestaUsuario>>, AppError> {
+    let filas = sqlx::query_as!(
+        RespuestaUsuario,
+        "SELECT id, name, email, role, is_active, created_at FROM users ORDER BY name"
+    )
+    .fetch_all(&pool)
+    .await?;
+    Ok(Json(filas))
 }
 
 // ------------------------- POST /admin/workspaces -------------------------
@@ -127,6 +146,7 @@ pub async fn crear_workspace(
 
     auditoria::registrar(
         &pool,
+        Some(fila.id),
         Some(dev.id),
         acciones::WORKSPACE_CREADO,
         json!({"workspace_id": fila.id, "name": fila.name}),
@@ -203,6 +223,7 @@ pub async fn asignar_miembro(
 
     auditoria::registrar(
         &pool,
+        Some(workspace_id),
         Some(dev.id),
         acciones::MIEMBRO_ASIGNADO,
         json!({"workspace_id": workspace_id, "user_id": usuario.id, "role": datos.role}),
@@ -213,6 +234,42 @@ pub async fn asignar_miembro(
         StatusCode::CREATED,
         Json(json!({"mensaje": "Miembro asignado", "user_id": usuario.id})),
     ))
+}
+
+// ------------------------- GET /admin/workspaces/:id/miembros -------------------------
+
+#[derive(Serialize)]
+pub struct MiembroWorkspace {
+    pub user_id: Uuid,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+    pub joined_at: chrono::DateTime<Utc>,
+}
+
+/// Lista los miembros de un workspace — hace falta para poder elegir a
+/// quién eliminar desde el panel (`eliminar_miembro` pide el `user_id`
+/// en la ruta, y hasta ahora no había forma de conocerlo).
+pub async fn listar_miembros(
+    State(pool): State<PgPool>,
+    SoloDev(_dev): SoloDev,
+    Path(workspace_id): Path<Uuid>,
+) -> Result<Json<Vec<MiembroWorkspace>>, AppError> {
+    workspace_existe(&pool, workspace_id).await?;
+
+    let filas = sqlx::query_as!(
+        MiembroWorkspace,
+        r#"SELECT u.id AS user_id, u.name, u.email, m.role, m.joined_at
+           FROM workspace_members m
+           JOIN users u ON u.id = m.user_id
+           WHERE m.workspace_id = $1
+           ORDER BY u.name"#,
+        workspace_id
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    Ok(Json(filas))
 }
 
 // ------------------------- POST /admin/invitaciones -------------------------
@@ -256,6 +313,7 @@ pub async fn crear_invitacion(
 
     auditoria::registrar(
         &pool,
+        Some(datos.workspace_id),
         Some(dev.id),
         acciones::INVITACION_CREADA,
         json!({"workspace_id": datos.workspace_id, "email": email, "role": datos.role}),
@@ -282,10 +340,15 @@ pub struct PaginacionAuditoria {
     pub desplazamiento: Option<i64>,
 }
 
+/// A diferencia de `movimientos::Movimiento` (ya scoped a un
+/// workspace), esta vista es global y cruza tenants — por eso también
+/// resuelve `workspace_name`, útil para saber de qué tenant es cada
+/// entrada.
 #[derive(Serialize)]
 pub struct EntradaAuditoria {
     pub id: Uuid,
-    pub user_id: Option<Uuid>,
+    pub actor_name: String,
+    pub workspace_name: Option<String>,
     pub action: String,
     pub detail: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<Utc>,
@@ -302,13 +365,136 @@ pub async fn listar_auditoria(
 
     let filas = sqlx::query_as!(
         EntradaAuditoria,
-        "SELECT id, user_id, action, detail, created_at
-         FROM audit_log ORDER BY created_at DESC
-         LIMIT $1 OFFSET $2",
+        r#"SELECT a.id, COALESCE(u.name, 'Sistema') AS "actor_name!", w.name AS "workspace_name?",
+                  a.action, a.detail, a.created_at
+           FROM audit_log a
+           LEFT JOIN users u ON u.id = a.user_id
+           LEFT JOIN workspaces w ON w.id = a.workspace_id
+           ORDER BY a.created_at DESC
+           LIMIT $1 OFFSET $2"#,
         limite,
         desplazamiento
     )
     .fetch_all(&pool)
     .await?;
     Ok(Json(filas))
+}
+
+// ------------------------- DELETE /admin/workspaces/:id/miembros/:user_id -------------------------
+
+/// Quita a un usuario de un workspace. No se puede eliminar al
+/// propietario (`workspaces.owner_id`) por esta vía — el owner no se
+/// gestiona como una membresía más.
+pub async fn eliminar_miembro(
+    State(pool): State<PgPool>,
+    SoloDev(dev): SoloDev,
+    Path((workspace_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, AppError> {
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM workspaces WHERE id = $1",
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Workspace no encontrado".to_string()))?;
+
+    if owner_id == user_id {
+        return Err(AppError::NoProcesable(
+            "No se puede eliminar al propietario del workspace".to_string(),
+        ));
+    }
+
+    let resultado = sqlx::query!(
+        "DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2",
+        workspace_id,
+        user_id
+    )
+    .execute(&pool)
+    .await?;
+
+    if resultado.rows_affected() == 0 {
+        return Err(AppError::NoEncontrado("Miembro no encontrado".to_string()));
+    }
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(dev.id),
+        acciones::MIEMBRO_ELIMINADO,
+        json!({"workspace_id": workspace_id, "user_id": user_id}),
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ------------------------- POST /admin/usuarios/:id/desactivar -------------------------
+
+/// Desactiva una cuenta (bloquea el login) y revoca sus refresh tokens
+/// vigentes, para que pierda la sesión en el siguiente refresh.
+pub async fn desactivar_usuario(
+    State(pool): State<PgPool>,
+    SoloDev(dev): SoloDev,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RespuestaUsuario>, AppError> {
+    if id == dev.id {
+        return Err(AppError::NoProcesable(
+            "No puedes desactivar tu propia cuenta".to_string(),
+        ));
+    }
+
+    let usuario = sqlx::query_as!(
+        User,
+        "UPDATE users SET is_active = false WHERE id = $1
+         RETURNING id, name, email, password_hash, role, is_active,
+                   failed_login_attempts, locked_until, created_at",
+        id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Usuario no encontrado".to_string()))?;
+
+    tokens::revocar_todos_los_refresh(&pool, id).await?;
+
+    auditoria::registrar(
+        &pool,
+        None,
+        Some(dev.id),
+        acciones::USUARIO_DESACTIVADO,
+        json!({"user_id": id}),
+    )
+    .await;
+
+    Ok(Json(usuario.into()))
+}
+
+// ------------------------- POST /admin/usuarios/:id/reactivar -------------------------
+
+/// Reactiva una cuenta previamente desactivada.
+pub async fn reactivar_usuario(
+    State(pool): State<PgPool>,
+    SoloDev(dev): SoloDev,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RespuestaUsuario>, AppError> {
+    let usuario = sqlx::query_as!(
+        User,
+        "UPDATE users SET is_active = true WHERE id = $1
+         RETURNING id, name, email, password_hash, role, is_active,
+                   failed_login_attempts, locked_until, created_at",
+        id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Usuario no encontrado".to_string()))?;
+
+    auditoria::registrar(
+        &pool,
+        None,
+        Some(dev.id),
+        acciones::USUARIO_REACTIVADO,
+        json!({"user_id": id}),
+    )
+    .await;
+
+    Ok(Json(usuario.into()))
 }

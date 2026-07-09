@@ -12,10 +12,12 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounting::models::{Categoria, CrearCategoriaDatos};
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -110,7 +112,17 @@ pub async fn crear(
     .await;
 
     match resultado {
-        Ok(categoria) => Ok((StatusCode::CREATED, Json(categoria))),
+        Ok(categoria) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::CATEGORIA_CREADA,
+                json!({"category_id": categoria.id, "name": categoria.name}),
+            )
+            .await;
+            Ok((StatusCode::CREATED, Json(categoria)))
+        }
         Err(sqlx::Error::Database(e))
             if e.constraint() == Some("categories_workspace_name_unique") =>
         {
@@ -142,7 +154,17 @@ pub async fn eliminar(
         Ok(r) if r.rows_affected() == 0 => Err(AppError::NoEncontrado(
             "Categoría no encontrada".to_string(),
         )),
-        Ok(_) => Ok(StatusCode::NO_CONTENT),
+        Ok(_) => {
+            auditoria::registrar(
+                &pool,
+                Some(workspace_id),
+                Some(usuario.id),
+                acciones::CATEGORIA_ELIMINADA,
+                json!({"category_id": id}),
+            )
+            .await;
+            Ok(StatusCode::NO_CONTENT)
+        }
         // Violación de FK: la categoría está referenciada por transacciones,
         // suscripciones, presupuestos o previstos.
         Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("23503") => Err(

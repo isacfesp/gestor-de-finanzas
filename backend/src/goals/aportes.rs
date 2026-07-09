@@ -14,13 +14,17 @@ use axum::{
 };
 use chrono::{NaiveDate, Utc};
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
-use crate::goals::models::{AporteDatos, FiltroProyeccion, Meta, ProgresoMeta, ProyeccionMeta};
+use crate::goals::models::{
+    Aporte, AporteDatos, FiltroProyeccion, Meta, ProgresoMeta, ProyeccionMeta,
+};
 
 fn validar_tipo(tipo: &str) -> Result<(), AppError> {
     if tipo == "income" || tipo == "expense" {
@@ -115,7 +119,50 @@ pub async fn vincular(
 
     tx.commit().await?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::APORTE_REGISTRADO,
+        json!({"meta_id": id, "amount": datos.amount, "type": tipo}),
+    )
+    .await;
+
     Ok(Json(meta))
+}
+
+/// GET /workspaces/:workspace_id/metas/:id/aportes — historial de
+/// transacciones vinculadas a esta meta, más reciente primero.
+pub async fn listar_aportes(
+    State(pool): State<PgPool>,
+    usuario: UsuarioAutenticado,
+    Path((workspace_id, id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Vec<Aporte>>, AppError> {
+    verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    sqlx::query!(
+        "SELECT id FROM goals WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Meta no encontrada".to_string()))?;
+
+    let filas = sqlx::query_as!(
+        Aporte,
+        r#"SELECT t.id, t.type AS "tipo", t.amount, t.date, t.description,
+                  u.name AS created_by_name
+           FROM transactions t
+           JOIN users u ON u.id = t.created_by
+           WHERE t.goal_id = $1 AND t.is_active = true
+           ORDER BY t.date DESC, t.created_at DESC"#,
+        id
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    Ok(Json(filas))
 }
 
 /// GET /workspaces/:workspace_id/metas/:id/progreso

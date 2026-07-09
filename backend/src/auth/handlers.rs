@@ -12,6 +12,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::auditoria::{self, acciones};
 use crate::auth::extractores::UsuarioAutenticado;
@@ -106,6 +107,7 @@ pub async fn login(
         auditoria::registrar(
             &pool,
             None,
+            None,
             acciones::LOGIN_FALLIDO,
             json!({"email": datos.email}),
         )
@@ -120,6 +122,7 @@ pub async fn login(
     {
         auditoria::registrar(
             &pool,
+            None,
             Some(usuario.id),
             acciones::LOGIN_BLOQUEADO,
             json!({}),
@@ -131,6 +134,7 @@ pub async fn login(
     if !usuario.is_active {
         auditoria::registrar(
             &pool,
+            None,
             Some(usuario.id),
             acciones::LOGIN_FALLIDO,
             json!({"motivo": "cuenta_inactiva"}),
@@ -161,6 +165,7 @@ pub async fn login(
 
         auditoria::registrar(
             &pool,
+            None,
             Some(usuario.id),
             acciones::LOGIN_FALLIDO,
             json!({"intentos": usuario.failed_login_attempts + 1}),
@@ -178,7 +183,7 @@ pub async fn login(
     .await?;
 
     let respuesta = emitir_par_de_tokens(&pool, usuario.id, &usuario.role).await?;
-    auditoria::registrar(&pool, Some(usuario.id), acciones::LOGIN_OK, json!({})).await;
+    auditoria::registrar(&pool, None, Some(usuario.id), acciones::LOGIN_OK, json!({})).await;
     Ok(Json(respuesta))
 }
 
@@ -203,6 +208,7 @@ pub async fn refresh(
         tokens::revocar_todos_los_refresh(&pool, guardado.user_id).await?;
         auditoria::registrar(
             &pool,
+            None,
             Some(guardado.user_id),
             acciones::REFRESH_REUSO,
             json!({}),
@@ -247,7 +253,7 @@ pub async fn logout(
             tokens::revocar_refresh_token(&pool, guardado.id).await?;
         }
     }
-    auditoria::registrar(&pool, Some(usuario.id), acciones::LOGOUT, json!({})).await;
+    auditoria::registrar(&pool, None, Some(usuario.id), acciones::LOGOUT, json!({})).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -260,12 +266,55 @@ pub async fn yo(
 ) -> Result<Json<RespuestaUsuario>, AppError> {
     let fila = sqlx::query_as!(
         RespuestaUsuario,
-        "SELECT id, name, email, role, created_at FROM users WHERE id = $1",
+        "SELECT id, name, email, role, is_active, created_at FROM users WHERE id = $1",
         usuario.id
     )
     .fetch_one(&pool)
     .await?;
     Ok(Json(fila))
+}
+
+// ------------------------- GET /auth/mis-workspaces -------------------------
+
+/// Workspace visible para el usuario autenticado, sin los campos que
+/// solo le hacen falta al panel de administración (`created_at`,
+/// conteo de miembros).
+#[derive(Serialize)]
+pub struct WorkspaceResumen {
+    pub id: Uuid,
+    pub name: String,
+}
+
+/// Los workspaces del usuario autenticado: un dev ve todos los tenants
+/// (bypasa la tabla de membresía, igual que en el resto del sistema);
+/// un usuario normal solo los que tienen una fila en
+/// `workspace_members`. Resuelve el pendiente anotado en `CLAUDE.md`
+/// ("no existe un endpoint para que un usuario normal liste sus
+/// propios workspaces").
+pub async fn mis_workspaces(
+    State(pool): State<PgPool>,
+    usuario: UsuarioAutenticado,
+) -> Result<Json<Vec<WorkspaceResumen>>, AppError> {
+    let filas = if usuario.es_dev() {
+        sqlx::query_as!(
+            WorkspaceResumen,
+            "SELECT id, name FROM workspaces ORDER BY created_at"
+        )
+        .fetch_all(&pool)
+        .await?
+    } else {
+        sqlx::query_as!(
+            WorkspaceResumen,
+            r#"SELECT w.id, w.name FROM workspaces w
+               JOIN workspace_members m ON m.workspace_id = w.id
+               WHERE m.user_id = $1
+               ORDER BY w.name"#,
+            usuario.id
+        )
+        .fetch_all(&pool)
+        .await?
+    };
+    Ok(Json(filas))
 }
 
 // ------------------------- POST /auth/invitaciones/aceptar -------------------------
@@ -341,6 +390,7 @@ pub async fn aceptar_invitacion(
 
     auditoria::registrar(
         &pool,
+        Some(invitacion.workspace_id),
         Some(usuario.id),
         acciones::INVITACION_ACEPTADA,
         json!({"workspace_id": invitacion.workspace_id}),

@@ -121,6 +121,18 @@ pub async fn delete(path: &str, token: &str) -> Result<(), ApiError> {
     confirmar(respuesta).await
 }
 
+/// POST autenticado sin cuerpo de petición, cuya respuesta sí trae JSON
+/// (a diferencia de `post_sin_respuesta`, pensado para 204). Para
+/// acciones sin parámetros como "marcar cobrada" o "marcar pagado".
+pub async fn post_vacio<T: DeserializeOwned>(path: &str, token: &str) -> Result<T, ApiError> {
+    let respuesta = Request::post(path)
+        .header("Authorization", &header_autorizacion(token))
+        .send()
+        .await
+        .map_err(|e| ApiError::Red(e.to_string()))?;
+    decodificar(respuesta).await
+}
+
 /// POST autenticado cuya respuesta no trae cuerpo (204), como logout.
 pub async fn post_sin_respuesta<B: Serialize>(
     path: &str,

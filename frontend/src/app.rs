@@ -7,7 +7,7 @@ use leptos_router::path;
 
 use crate::components::ProtectedShell;
 use crate::components::theme::provide_theme_context;
-use crate::pages::{Home, Login, NotFound, modulos};
+use crate::pages::{AdminPage, Home, Login, NotFound, PerfilPage, modulos};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -31,6 +31,8 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("agenda") view=modulos::AgendaPage/>
                     <Route path=path!("inversiones") view=modulos::InversionesPage/>
                     <Route path=path!("movimientos") view=modulos::MovimientosPage/>
+                    <Route path=path!("admin") view=AdminPage/>
+                    <Route path=path!("perfil") view=PerfilPage/>
                 </ParentRoute>
             </Routes>
         </Router>

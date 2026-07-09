@@ -15,11 +15,13 @@ use axum::{
     http::StatusCode,
 };
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounting::categorias::validar_categoria;
 use crate::accounting::models::{DatosTransaccion, FiltrosTransacciones, Transaccion};
+use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
@@ -117,6 +119,15 @@ pub async fn crear(
 
     tx.commit().await?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::TRANSACCION_CREADA,
+        json!({"transaccion_id": fila.id, "type": fila.tipo, "amount": fila.amount}),
+    )
+    .await;
+
     Ok((StatusCode::CREATED, Json(fila)))
 }
 
@@ -143,6 +154,7 @@ pub async fn listar(
                   category_id, account_id, description, created_by, created_at
            FROM transactions
            WHERE workspace_id = $1
+             AND is_active = true
              AND ($2::text IS NULL OR type = $2)
              AND ($3::uuid IS NULL OR category_id = $3)
              AND ($4::date IS NULL OR date >= $4)
@@ -180,7 +192,7 @@ pub async fn obtener(
         Transaccion,
         r#"SELECT id, workspace_id, type AS "tipo", amount, date,
                   category_id, account_id, description, created_by, created_at
-           FROM transactions WHERE id = $1 AND workspace_id = $2"#,
+           FROM transactions WHERE id = $1 AND workspace_id = $2 AND is_active = true"#,
         id,
         workspace_id
     )
@@ -210,7 +222,7 @@ pub async fn actualizar(
 
     let anterior = sqlx::query!(
         r#"SELECT type AS "tipo", amount, account_id FROM transactions
-           WHERE id = $1 AND workspace_id = $2 FOR UPDATE"#,
+           WHERE id = $1 AND workspace_id = $2 AND is_active = true FOR UPDATE"#,
         id,
         workspace_id
     )
@@ -275,10 +287,24 @@ pub async fn actualizar(
 
     tx.commit().await?;
 
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::TRANSACCION_EDITADA,
+        json!({"transaccion_id": fila.id}),
+    )
+    .await;
+
     Ok(Json(fila))
 }
 
 /// DELETE /workspaces/:workspace_id/transacciones/:id
+///
+/// Borrado lógico: revierte el efecto de la transacción sobre el saldo
+/// de su cuenta (igual que siempre) pero la fila no se borra, se marca
+/// `is_active = false` — así queda rastro para auditoría y el listado
+/// normal la oculta (mismo patrón que `accounts.is_active`).
 pub async fn eliminar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -290,7 +316,7 @@ pub async fn eliminar(
 
     let fila = sqlx::query!(
         r#"SELECT type AS "tipo", amount, account_id FROM transactions
-           WHERE id = $1 AND workspace_id = $2 FOR UPDATE"#,
+           WHERE id = $1 AND workspace_id = $2 AND is_active = true FOR UPDATE"#,
         id,
         workspace_id
     )
@@ -316,7 +342,7 @@ pub async fn eliminar(
     .await?;
 
     sqlx::query!(
-        "DELETE FROM transactions WHERE id = $1 AND workspace_id = $2",
+        "UPDATE transactions SET is_active = false WHERE id = $1 AND workspace_id = $2",
         id,
         workspace_id
     )
@@ -324,6 +350,15 @@ pub async fn eliminar(
     .await?;
 
     tx.commit().await?;
+
+    auditoria::registrar(
+        &pool,
+        Some(workspace_id),
+        Some(usuario.id),
+        acciones::TRANSACCION_ELIMINADA,
+        json!({"transaccion_id": id, "amount": fila.amount}),
+    )
+    .await;
 
     Ok(StatusCode::NO_CONTENT)
 }
