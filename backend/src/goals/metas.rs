@@ -86,7 +86,7 @@ pub async fn listar(
            FROM goals
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_completed = $2)
-           ORDER BY deadline"#,
+           ORDER BY is_completed, deadline"#,
         workspace_id,
         filtros.completadas
     )

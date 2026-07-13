@@ -1,24 +1,28 @@
-//! Página "Agenda": suscripciones, presupuestos y previstos (backend
-//! `accounting` + `planned_transactions`) — ver `docs/frontend-ia.md`.
+//! Página "Agenda": suscripciones, presupuestos, previstos (backend
+//! `accounting` + `planned_transactions`) y un calendario que junta
+//! esos dos con las metas de Inversiones — ver `docs/frontend-ia.md`.
 //!
-//! Tres pestañas: Suscripciones, Presupuestos, Previstos.
+//! Cuatro pestañas: Calendario, Suscripciones, Presupuestos, Previstos.
 
 use leptos::prelude::*;
 use uuid::Uuid;
 
 use crate::workspace::use_workspace;
 
+mod calendario_tab;
 mod presupuestos_tab;
 mod previstos_tab;
 mod suscripciones_tab;
 mod util;
 
+use calendario_tab::PestanaCalendario;
 use presupuestos_tab::PestanaPresupuestos;
 use previstos_tab::PestanaPrevistos;
 use suscripciones_tab::PestanaSuscripciones;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Pestana {
+    Calendario,
     Suscripciones,
     Presupuestos,
     Previstos,
@@ -27,7 +31,7 @@ enum Pestana {
 #[component]
 pub fn AgendaPage() -> impl IntoView {
     let workspace = use_workspace();
-    let pestana = RwSignal::new(Pestana::Suscripciones);
+    let pestana = RwSignal::new(Pestana::Calendario);
 
     view! {
         <Show
@@ -46,6 +50,9 @@ pub fn AgendaPage() -> impl IntoView {
             // workspace.id() nunca es None aquí (el <Show> de arriba ya lo
             // garantiza); Uuid::nil() es solo un valor de respaldo inerte
             // para no depender de .unwrap()/.expect().
+            <Show when=move || pestana.get() == Pestana::Calendario>
+                <PestanaCalendario workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+            </Show>
             <Show when=move || pestana.get() == Pestana::Suscripciones>
                 <PestanaSuscripciones workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             </Show>
@@ -71,6 +78,9 @@ fn BarraPestanas(pestana: RwSignal<Pestana>) -> impl IntoView {
 
     view! {
         <div class="tabs">
+            <button class=move || clase(Pestana::Calendario) on:click=move |_| pestana.set(Pestana::Calendario)>
+                "Calendario"
+            </button>
             <button class=move || clase(Pestana::Suscripciones) on:click=move |_| pestana.set(Pestana::Suscripciones)>
                 "Suscripciones"
             </button>

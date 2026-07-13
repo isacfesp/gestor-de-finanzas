@@ -13,7 +13,11 @@ pub enum Tema {
 }
 
 impl Tema {
-    fn como_texto(self) -> &'static str {
+    /// "dark"/"light" — además de usarse para `data-theme`, se manda
+    /// tal cual al backend en `analytics::{tendencia_svg,
+    /// flujo_pastel_svg}` para que el SVG generado ahí use la paleta
+    /// correcta (el servidor no puede leer `[data-theme]` del cliente).
+    pub fn como_texto(self) -> &'static str {
         match self {
             Tema::Claro => "light",
             Tema::Oscuro => "dark",

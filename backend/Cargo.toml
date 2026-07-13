@@ -19,3 +19,7 @@ rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
+# Gráficas de tendencia (línea) y flujo de dinero (pastel) para
+# /analytics/charts/* — renderiza a SVG en el servidor, ver
+# `src/analytics/graficos.rs`.
+charts-rs = { version = "0.3", default-features = false }

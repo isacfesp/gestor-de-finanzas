@@ -47,6 +47,13 @@ fn validar_monto(monto: Decimal) -> Result<(), AppError> {
 }
 
 /// POST /workspaces/:workspace_id/metas/:id/aportes
+///
+/// Un aporte mueve dinero real de/hacia una cuenta: 'income' resta de
+/// la cuenta (el dinero se aparta hacia el ahorro), 'expense' (retiro)
+/// le devuelve el monto — sentido opuesto al que aplica sobre
+/// `goals.current_amount` más abajo. Misma cuenta bloqueada con `FOR
+/// UPDATE` dentro de la transacción, igual que
+/// `accounting::transacciones::crear`.
 pub async fn vincular(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -59,6 +66,17 @@ pub async fn vincular(
     validar_tipo(&tipo)?;
 
     let mut tx = pool.begin().await?;
+
+    let cuenta = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+        datos.account_id,
+        workspace_id
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    if cuenta.is_none() {
+        return Err(AppError::NoEncontrado("Cuenta no encontrada".to_string()));
+    }
 
     // FOR UPDATE: si dos aportes a la misma meta llegan a la vez, el
     // segundo espera a que el primero termine de leer y escribir
@@ -102,16 +120,30 @@ pub async fn vincular(
     .fetch_one(&mut *tx)
     .await?;
 
+    let ajuste_cuenta = if tipo == "income" {
+        -datos.amount
+    } else {
+        datos.amount
+    };
+    sqlx::query!(
+        "UPDATE accounts SET balance = balance + $1 WHERE id = $2",
+        ajuste_cuenta,
+        datos.account_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
     sqlx::query!(
         r#"INSERT INTO transactions
-               (workspace_id, type, amount, date, description, goal_id, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
+               (workspace_id, type, amount, date, description, goal_id, account_id, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
         workspace_id,
         tipo,
         datos.amount,
         datos.date,
         datos.description,
         id,
+        datos.account_id,
         usuario.id
     )
     .execute(&mut *tx)

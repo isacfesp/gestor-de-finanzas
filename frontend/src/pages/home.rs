@@ -14,6 +14,7 @@ mod auditoria_rapida;
 mod distribucion;
 mod kpis;
 mod tasa_ahorro;
+mod tendencia;
 mod util;
 
 use accesos_rapidos::AccesosRapidos;
@@ -21,6 +22,7 @@ use auditoria_rapida::AuditoriaRapida;
 use distribucion::Distribucion;
 use kpis::Kpis;
 use tasa_ahorro::TasaAhorro;
+use tendencia::Tendencia;
 
 #[component]
 pub fn Home() -> impl IntoView {
@@ -68,6 +70,7 @@ pub fn Home() -> impl IntoView {
                 <Kpis workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta/>
             </div>
             <TasaAhorro workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+            <Tendencia workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             <Distribucion workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta/>
             <AccesosRapidos workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             <AuditoriaRapida workspace_id=workspace.id().unwrap_or(Uuid::nil())/>

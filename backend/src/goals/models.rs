@@ -51,6 +51,10 @@ pub struct AporteDatos {
     pub tipo: Option<String>,
     pub date: NaiveDate,
     pub description: Option<String>,
+    /// Cuenta de la que sale el aporte ('income') o a la que vuelve el
+    /// retiro ('expense') — obligatoria: un aporte siempre mueve dinero
+    /// real de/hacia una cuenta concreta (ver `aportes::vincular`).
+    pub account_id: Uuid,
 }
 
 /// Progreso de una meta: saldo restante y porcentaje completado.

@@ -189,7 +189,7 @@ where
     view! {
         <div class="menu-gear">
             <button type="button" class="menu-gear-btn" title="Acciones" on:click=move |ev| {
-                abrir_menu(ev, abierto, posicion)
+                abrir_menu(ev, abierto, posicion, 180.0)
             }>
                 <svg viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -433,7 +433,18 @@ where
             <div class="form-grid">
                 <div class="field">
                     <label>"Tipo"</label>
-                    <select prop:value=move || tipo.get() on:change=move |ev| tipo.set(event_target_value(&ev))>
+                    <select
+                        prop:value=move || tipo.get()
+                        on:change=move |ev| {
+                            tipo.set(event_target_value(&ev));
+                            // La categoría elegida puede quedar de un tipo que ya
+                            // no coincide con el nuevo Tipo (el backend valida
+                            // que sean del mismo tipo) — se limpia para no
+                            // mandar una combinación inválida sin que el usuario
+                            // se dé cuenta.
+                            categoria_id.set(String::new());
+                        }
+                    >
                         <option value="expense">"Egreso"</option>
                         <option value="income">"Ingreso"</option>
                     </select>
@@ -442,6 +453,7 @@ where
                     <label>"Monto"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || monto.get()
                         on:input=move |ev| monto.set(event_target_value(&ev))
                     />

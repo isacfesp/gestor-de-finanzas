@@ -1,14 +1,15 @@
 //! Armazón visual de las páginas autenticadas: encabezado, navegación
-//! (barra inferior en móvil, rail lateral en escritorio vía media
-//! query en `main.css`) y el `<Outlet/>` donde el router dibuja cada
-//! página. También hace de guardia de autenticación: si no hay
-//! sesión, redirige a `/login` en vez de mostrar el contenido.
+//! (barra inferior en móvil, rail lateral en escritorio a partir del
+//! breakpoint `md:` de Tailwind) y el `<Outlet/>` donde el router
+//! dibuja cada página. También hace de guardia de autenticación: si no
+//! hay sesión, redirige a `/login` en vez de mostrar el contenido.
 
 use leptos::prelude::*;
 use leptos_router::components::{A, Outlet, Redirect};
 use uuid::Uuid;
 
 use crate::auth::{cerrar_sesion, use_auth};
+use crate::components::boton_rapido::BotonRapido;
 use crate::components::notificaciones::CampanaNotificaciones;
 use crate::components::theme::use_theme;
 use crate::workspace::use_workspace;
@@ -22,6 +23,18 @@ const NAV_ITEMS: &[(&str, &str, &str)] = &[
     ("Inversiones", "/inversiones", "trend"),
     ("Movimientos", "/movimientos", "list"),
 ];
+
+/// Compartida por los links de `NAV_ITEMS` y el link de Admin: móvil
+/// (base) apila ícono+etiqueta en columna dentro de la barra inferior;
+/// `md:` los pone en fila dentro del rail lateral. `aria-[current=page]`
+/// es el estado activo que ya pone `<A exact=true>` de leptos_router.
+const NAV_LINK_CLASS: &str = "flex flex-none flex-col items-center justify-center gap-[3px] \
+    rounded-sm px-3.5 py-1.5 min-w-[64px] text-[10.5px] font-semibold text-muted \
+    transition-colors hover:bg-hover aria-[current=page]:bg-accent-soft \
+    aria-[current=page]:text-accent md:min-w-0 md:flex-row md:justify-start md:gap-3 \
+    md:px-3 md:py-[11px] md:text-sm";
+
+const NAV_ICON_CLASS: &str = "w-[19px] h-[19px] flex-none fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.8]";
 
 fn icono(kind: &str) -> AnyView {
     match kind {
@@ -88,20 +101,20 @@ pub fn ProtectedShell() -> impl IntoView {
 
     view! {
         <Show when=move || auth.is_logged_in() fallback=|| view! { <Redirect path="/login"/> }>
-            <div class="app-shell">
-                <nav class="app-nav">
-                    <div class="app-nav-brand">
-                        <span class="brand-mark">"g"</span>
-                        <span class="brand-word">"geck"</span>
+            <div class="flex min-h-[100dvh] flex-col bg-bg md:flex-row">
+                <nav class="fixed inset-x-0 bottom-0 z-[5] flex flex-row items-center gap-1 overflow-x-auto overflow-y-visible border-t border-line bg-sidebar px-2.5 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))] md:sticky md:inset-auto md:top-0 md:h-[100dvh] md:w-[250px] md:flex-none md:flex-col md:items-stretch md:gap-0.5 md:overflow-x-visible md:overflow-y-auto md:border-t-0 md:border-r md:px-4 md:py-[22px]">
+                    <div class="hidden items-center gap-2.5 px-2 pb-[22px] pt-1.5 md:flex">
+                        <span class="brand-mark">"G"</span>
+                        <span class="text-[17px] font-extrabold tracking-[-0.02em] text-text">"Geck-gestor"</span>
                     </div>
 
-                    <span class="app-nav-section">"GENERAL"</span>
+                    <span class="hidden px-2.5 pb-1.5 pt-[18px] font-mono text-[10px] font-semibold tracking-[0.08em] text-faint md:block">"GENERAL"</span>
                     {NAV_ITEMS
                         .iter()
                         .map(|(label, path, kind)| {
                             view! {
-                                <A href=*path exact=true attr:class="nav-link">
-                                    <svg viewBox="0 0 24 24">{icono(kind)}</svg>
+                                <A href=*path exact=true attr:class=NAV_LINK_CLASS>
+                                    <svg viewBox="0 0 24 24" class=NAV_ICON_CLASS>{icono(kind)}</svg>
                                     <span>{*label}</span>
                                 </A>
                             }
@@ -111,23 +124,25 @@ pub fn ProtectedShell() -> impl IntoView {
                     // Admin no vive en NAV_ITEMS (esa lista es estática,
                     // sin lógica) porque solo el rol dev debe verlo.
                     <Show when=move || auth.es_dev()>
-                        <A href="/admin" exact=true attr:class="nav-link">
-                            <svg viewBox="0 0 24 24">{icono("shield")}</svg>
+                        <A href="/admin" exact=true attr:class=NAV_LINK_CLASS>
+                            <svg viewBox="0 0 24 24" class=NAV_ICON_CLASS>{icono("shield")}</svg>
                             <span>"Admin"</span>
                         </A>
                     </Show>
 
-                    <div class="app-nav-help">
-                        <p>"¿Necesitas ayuda?"</p>
-                        <p class="text-soft">"Revisa la guía de geck"</p>
-                        <button class="btn-ghost">"Documentación"</button>
+                    <div class="hidden md:mt-auto md:block md:overflow-hidden md:rounded-[14px] md:border md:border-line md:p-4 md:[background:linear-gradient(150deg,#123a63,#0a1a3a)]">
+                        <p class="mb-1 text-[13px] font-bold text-[#eaf0ff]">"¿Necesitas ayuda?"</p>
+                        <p class="mb-3 text-[12px] text-[rgba(234,240,255,.6)]">"Revisa la guía de geck"</p>
+                        <button class="w-full rounded-sm bg-[rgba(255,255,255,.08)] px-[13px] py-[9px] text-[12.5px] font-semibold text-[#eaf0ff] hover:bg-[rgba(255,255,255,.14)]">
+                            "Documentación"
+                        </button>
                     </div>
                 </nav>
 
-                <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
-                    <header class="app-header">
+                <div class="flex min-w-0 flex-1 flex-col">
+                    <header class="sticky top-0 z-20 flex items-center gap-4 border-b border-line px-4 pb-4 pt-[calc(16px+env(safe-area-inset-top))] md:px-[30px] md:pb-[18px] md:pt-[calc(18px+env(safe-area-inset-top))]">
                         <Show when=move || workspace.nombre().is_some()>
-                            <span class="app-workspace">{move || workspace.nombre().unwrap_or_default()}</span>
+                            <span class="font-mono text-[11px] font-semibold text-faint">{move || workspace.nombre().unwrap_or_default()}</span>
                         </Show>
                         <button class="app-icon-btn" title="Cambiar tema" on:click=move |_| tema.alternar()>
                             {move || match tema.actual() {
@@ -142,11 +157,11 @@ pub fn ProtectedShell() -> impl IntoView {
                         <Show when=move || workspace.id().is_some()>
                             <CampanaNotificaciones workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
                         </Show>
-                        <A href="/perfil" attr:class="app-user-btn">
-                            <span class="avatar">
+                        <A href="/perfil" attr:class="flex items-center gap-[9px] rounded-sm border border-card-line bg-transparent py-[5px] pr-[10px] pl-[6px] text-text hover:bg-hover">
+                            <span class="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[linear-gradient(135deg,#8b5cf6,var(--accent))] text-[13px] font-bold text-[#04222e]">
                                 {move || auth.usuario().map(|u| iniciales(&u.name)).unwrap_or_default()}
                             </span>
-                            <span>{move || auth.usuario().map(|u| u.name).unwrap_or_default()}</span>
+                            <span class="hidden sm:inline">{move || auth.usuario().map(|u| u.name).unwrap_or_default()}</span>
                         </A>
                         <button class="app-icon-btn" title="Cerrar sesión" on:click=salir>
                             <svg viewBox="0 0 24 24">
@@ -157,10 +172,12 @@ pub fn ProtectedShell() -> impl IntoView {
                         </button>
                     </header>
 
-                    <main class="app-main">
+                    <main class="min-w-0 flex-1 px-4 pt-5 pb-[90px] md:px-[30px] md:pt-[26px] md:pb-10">
                         <Outlet/>
                     </main>
                 </div>
+
+                <BotonRapido/>
             </div>
         </Show>
     }

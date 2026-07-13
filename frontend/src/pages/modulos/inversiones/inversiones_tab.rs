@@ -161,7 +161,7 @@ where
     view! {
         <div class="menu-gear">
             <button type="button" class="menu-gear-btn" title="Acciones" on:click=move |ev| {
-                abrir_menu(ev, abierto, posicion)
+                abrir_menu(ev, abierto, posicion, 180.0)
             }>
                 <svg viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -336,11 +336,11 @@ where
                 </div>
                 <div class="field">
                     <label>"Capital"</label>
-                    <input placeholder="0.00" prop:value=move || principal.get() on:input=move |ev| principal.set(event_target_value(&ev))/>
+                    <input placeholder="0.00" inputmode="decimal" prop:value=move || principal.get() on:input=move |ev| principal.set(event_target_value(&ev))/>
                 </div>
                 <div class="field">
                     <label>"Tasa GAT anual (%)"</label>
-                    <input placeholder="0.00" prop:value=move || tasa.get() on:input=move |ev| tasa.set(event_target_value(&ev))/>
+                    <input placeholder="0.00" inputmode="decimal" prop:value=move || tasa.get() on:input=move |ev| tasa.set(event_target_value(&ev))/>
                 </div>
                 <div class="field">
                     <label>"Tipo de interés"</label>
@@ -357,7 +357,7 @@ where
                 </div>
                 <div class="field">
                     <label>"Plazo (días)"</label>
-                    <input placeholder="0" prop:value=move || plazo.get() on:input=move |ev| plazo.set(event_target_value(&ev))/>
+                    <input placeholder="0" inputmode="numeric" prop:value=move || plazo.get() on:input=move |ev| plazo.set(event_target_value(&ev))/>
                 </div>
             </div>
 
@@ -561,7 +561,7 @@ where
             <div class="form-grid">
                 <div class="field">
                     <label>"Monto"</label>
-                    <input placeholder="0.00" prop:value=move || monto.get() on:input=move |ev| monto.set(event_target_value(&ev))/>
+                    <input placeholder="0.00" inputmode="decimal" prop:value=move || monto.get() on:input=move |ev| monto.set(event_target_value(&ev))/>
                 </div>
                 <div class="field">
                     <label>"Fecha"</label>

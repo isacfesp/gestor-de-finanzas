@@ -90,6 +90,10 @@ pub struct Suscripcion {
     pub next_billing_date: NaiveDate,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
+    /// Cuenta de la que sale el cobro — opcional (una suscripción sin
+    /// cuenta sigue siendo válida, solo que "marcar cobrada" no genera
+    /// movimiento real, ver `suscripciones::marcar_cobrada`).
+    pub account_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +103,7 @@ pub struct CrearSuscripcionDatos {
     pub category_id: Option<Uuid>,
     pub periodicity: String,
     pub next_billing_date: NaiveDate,
+    pub account_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +114,7 @@ pub struct ActualizarSuscripcionDatos {
     pub periodicity: String,
     pub next_billing_date: NaiveDate,
     pub is_active: bool,
+    pub account_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

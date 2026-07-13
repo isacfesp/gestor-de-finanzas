@@ -14,11 +14,29 @@ use wasm_bindgen::JsCast;
 /// aparecer el menú, calculado a partir del botón que lo abrió.
 pub type PosicionMenu = RwSignal<(f64, f64)>;
 
+/// Espacio mínimo respecto al borde de la ventana: sin este margen, un
+/// menú anclado justo al borde queda pegado a él o, en viewports muy
+/// angostos, lo cruza.
+const MARGEN_BORDE: f64 = 8.0;
+
 /// Handler de `on:click` del botón de engranaje: calcula la posición del
 /// menú a partir del propio botón (`current_target`, no `target`, para
 /// no depender de si el clic cayó en el ícono o en el botón) y alterna
 /// si está abierto.
-pub fn abrir_menu(ev: leptos::ev::MouseEvent, abierto: RwSignal<bool>, posicion: PosicionMenu) {
+///
+/// `ancho_estimado` es el ancho (px) del panel que se va a mostrar
+/// (ej. 340.0 para `.notif-dropdown`, ~180.0 para un `.menu-dropdown`
+/// de pocas palabras). Solo se usa para el cálculo de abajo, no se
+/// aplica como estilo — sin él, anclar el menú por el borde derecho
+/// (`right`) deja que su borde izquierdo se salga de la pantalla en
+/// viewports angostos (el caso típico: la campana de notificaciones en
+/// un celular, con la app instalada como PWA).
+pub fn abrir_menu(
+    ev: leptos::ev::MouseEvent,
+    abierto: RwSignal<bool>,
+    posicion: PosicionMenu,
+    ancho_estimado: f64,
+) {
     if let Some(boton) = ev
         .current_target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
@@ -28,7 +46,14 @@ pub fn abrir_menu(ev: leptos::ev::MouseEvent, abierto: RwSignal<bool>, posicion:
             .and_then(|w| w.inner_width().ok())
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
-        posicion.set((rect.bottom() + 4.0, ancho_ventana - rect.right()));
+        // Tope: más allá de este `right`, el borde izquierdo del panel
+        // (ancho_ventana - right - ancho_estimado) quedaría por debajo
+        // del margen mínimo.
+        let right_tope = (ancho_ventana - ancho_estimado - MARGEN_BORDE).max(MARGEN_BORDE);
+        let right = (ancho_ventana - rect.right())
+            .max(MARGEN_BORDE)
+            .min(right_tope);
+        posicion.set((rect.bottom() + 4.0, right));
     }
     abierto.update(|v| *v = !*v);
 }

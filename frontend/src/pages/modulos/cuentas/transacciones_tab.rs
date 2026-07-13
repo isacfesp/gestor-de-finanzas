@@ -19,6 +19,7 @@ use uuid::Uuid;
 use super::util::{confirmar, hoy};
 use crate::api::{accounting, accounts, tags};
 use crate::auth::{token_vigente, use_auth};
+use crate::components::icono_cuenta::IconoCuenta;
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
 
 // ------------------------------ Operación ------------------------------
@@ -110,6 +111,13 @@ fn nombre_cuenta(cuentas: &[accounts::Cuenta], id: Uuid) -> String {
         .unwrap_or_else(|| "Cuenta eliminada".to_string())
 }
 
+/// A diferencia de `nombre_cuenta`, no tiene valor por defecto: una
+/// transferencia mezcla dos cuentas (origen/destino) y ahí no tiene
+/// sentido un solo ícono, así que esas filas quedan sin `tipo_cuenta`.
+fn tipo_cuenta(cuentas: &[accounts::Cuenta], id: Uuid) -> Option<String> {
+    cuentas.iter().find(|c| c.id == id).map(|c| c.tipo.clone())
+}
+
 fn nombre_categoria(categorias: &[accounting::Categoria], id: Option<Uuid>) -> String {
     id.and_then(|id| categorias.iter().find(|c| c.id == id))
         .map(|c| c.name.clone())
@@ -139,6 +147,7 @@ struct FilaVista {
     descripcion: String,
     categoria: String,
     cuenta: String,
+    tipo_cuenta: Option<String>,
     monto_texto: String,
     color: &'static str,
     editable: Option<accounting::Transaccion>,
@@ -166,6 +175,7 @@ fn construir_filas(
             descripcion: t.description.clone().unwrap_or_else(|| "—".to_string()),
             categoria: nombre_categoria(categorias, t.category_id),
             cuenta: nombre_cuenta(cuentas, t.account_id),
+            tipo_cuenta: tipo_cuenta(cuentas, t.account_id),
             monto_texto: format!("{signo}{:.2}", t.amount),
             color,
             editable: Some(t.clone()),
@@ -183,6 +193,7 @@ fn construir_filas(
                 nombre_cuenta(cuentas, tr.from_account_id),
                 nombre_cuenta(cuentas, tr.to_account_id)
             ),
+            tipo_cuenta: None,
             monto_texto: format!("{:.2}", tr.amount),
             color: "var(--text)",
             editable: None,
@@ -378,7 +389,7 @@ where
     view! {
         <div class="menu-gear">
             <button type="button" class="menu-gear-btn" title="Acciones" on:click=move |ev| {
-                abrir_menu(ev, abierto, posicion)
+                abrir_menu(ev, abierto, posicion, 180.0)
             }>
                 <svg viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -465,7 +476,12 @@ where
                                     <td>{fila.tipo_label}</td>
                                     <td>{fila.descripcion}</td>
                                     <td>{fila.categoria}</td>
-                                    <td>{fila.cuenta}</td>
+                                    <td>
+                                        <span class="flex items-center gap-1.5">
+                                            {fila.tipo_cuenta.clone().map(|tipo| view! { <IconoCuenta tipo=tipo/> })}
+                                            <span>{fila.cuenta}</span>
+                                        </span>
+                                    </td>
                                     <td class="num" style=format!("color:{};", fila.color)>{fila.monto_texto}</td>
                                     <td>
                                         {para_editar
@@ -587,6 +603,10 @@ where
     // Al cambiar de operación, la cuenta elegida puede quedar fuera del
     // nuevo filtro (ej. tenías "Efectivo" y pasas a Ahorro) — se reasigna
     // a la primera cuenta válida para no mandar una cuenta incompatible.
+    // La categoría se limpia por la misma razón: Ingreso/Ahorro y Gasto
+    // filtran categorías de distinto tipo (el backend valida que
+    // coincidan), y una ya elegida del tipo viejo quedaría inválida sin
+    // que se note en el `<select>`.
     let cambiar_operacion = move |ev| {
         let nueva = Operacion::desde_texto(&event_target_value(&ev));
         operacion.set(nueva);
@@ -603,6 +623,7 @@ where
                 .map(|c| c.id.to_string())
                 .unwrap_or_default(),
         );
+        categoria_id.set(String::new());
     };
 
     let guardar = move |ev: SubmitEvent| {
@@ -746,6 +767,7 @@ where
                     <label>"Monto"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || monto.get()
                         on:input=move |ev| monto.set(event_target_value(&ev))
                     />

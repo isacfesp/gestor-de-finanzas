@@ -9,7 +9,7 @@ use leptos::prelude::*;
 use uuid::Uuid;
 
 use super::util::hoy;
-use crate::api::{accounting, agenda};
+use crate::api::{accounting, accounts, agenda};
 use crate::auth::{token_vigente, use_auth};
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
 
@@ -43,6 +43,15 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
             .collect::<Vec<_>>()
     });
 
+    let cuentas = LocalResource::new(move || async move {
+        let Some(token) = token_vigente(auth).await else {
+            return Vec::new();
+        };
+        accounts::listar_cuentas(workspace_id, &token)
+            .await
+            .unwrap_or_default()
+    });
+
     let suscripciones = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
             return Err("Sesión vencida".to_string());
@@ -71,6 +80,7 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
                     <FormularioSuscripcion
                         workspace_id=workspace_id
                         categorias=categorias.get().unwrap_or_default()
+                        cuentas=cuentas.get().unwrap_or_default()
                         suscripcion_existente=None
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); suscripciones.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
@@ -81,6 +91,7 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
                     <FormularioSuscripcion
                         workspace_id=workspace_id
                         categorias=categorias.get().unwrap_or_default()
+                        cuentas=cuentas.get().unwrap_or_default()
                         suscripcion_existente=Some(s)
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); suscripciones.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
@@ -131,7 +142,7 @@ where
     view! {
         <div class="menu-gear">
             <button type="button" class="menu-gear-btn" title="Acciones" on:click=move |ev| {
-                abrir_menu(ev, abierto, posicion)
+                abrir_menu(ev, abierto, posicion, 180.0)
             }>
                 <svg viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -196,6 +207,7 @@ where
                     periodicity: &s.periodicity,
                     next_billing_date: s.next_billing_date,
                     is_active: !s.is_active,
+                    account_id: s.account_id,
                 };
                 let _ = agenda::actualizar_suscripcion(workspace_id, s.id, &datos, &token).await;
                 on_cambio();
@@ -254,6 +266,7 @@ where
 fn FormularioSuscripcion<F1, F2>(
     workspace_id: Uuid,
     categorias: Vec<accounting::Categoria>,
+    cuentas: Vec<accounts::Cuenta>,
     suscripcion_existente: Option<agenda::Suscripcion>,
     on_guardado: F1,
     on_cancelar: F2,
@@ -303,6 +316,13 @@ where
             .map(|s| s.is_active)
             .unwrap_or(true),
     );
+    let cuenta_id = RwSignal::new(
+        suscripcion_existente
+            .as_ref()
+            .and_then(|s| s.account_id)
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+    );
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
 
@@ -323,6 +343,7 @@ where
             return;
         };
         let category_id = Uuid::parse_str(&categoria_id.get_untracked()).ok();
+        let account_id = Uuid::parse_str(&cuenta_id.get_untracked()).ok();
 
         guardando.set(true);
         leptos::task::spawn_local(async move {
@@ -344,6 +365,7 @@ where
                         periodicity: &periodicity,
                         next_billing_date,
                         is_active: activa.get_untracked(),
+                        account_id,
                     },
                     &token,
                 )
@@ -358,6 +380,7 @@ where
                         category_id,
                         periodicity: &periodicity,
                         next_billing_date,
+                        account_id,
                     },
                     &token,
                 )
@@ -388,6 +411,7 @@ where
                     <label>"Monto"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || monto.get()
                         on:input=move |ev| monto.set(event_target_value(&ev))
                     />
@@ -427,6 +451,22 @@ where
                         prop:value=move || proximo_cobro.get()
                         on:input=move |ev| proximo_cobro.set(event_target_value(&ev))
                     />
+                </div>
+                <div class="field">
+                    <label>"Cuenta (opcional)"</label>
+                    <select
+                        prop:value=move || cuenta_id.get()
+                        on:change=move |ev| cuenta_id.set(event_target_value(&ev))
+                    >
+                        <option value="">"Sin cuenta"</option>
+                        {cuentas
+                            .iter()
+                            .map(|c| {
+                                let id = c.id.to_string();
+                                view! { <option value=id.clone()>{c.name.clone()}</option> }
+                            })
+                            .collect_view()}
+                    </select>
                 </div>
                 <Show when=move || es_edicion>
                     <div class="field">

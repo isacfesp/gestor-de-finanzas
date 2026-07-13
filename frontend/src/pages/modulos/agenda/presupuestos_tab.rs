@@ -325,6 +325,7 @@ where
                     <label>"Límite mensual"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || limite.get()
                         on:input=move |ev| limite.set(event_target_value(&ev))
                     />
