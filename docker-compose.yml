@@ -47,6 +47,13 @@ services:
       # Dentro de la red de compose, la base de datos se llama "db", no localhost.
       DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       PORT: ${PORT}
+      # sqlx::query!/query_as! validan el SQL en tiempo de compilación. Sin
+      # esto, contra una base recién creada (sin migrar todavía) la
+      # compilación falla con "relation ... does not exist": las
+      # migraciones solo corren cuando el binario ya compilado arranca,
+      # nunca antes. Con offline=true usa el caché de backend/.sqlx en vez
+      # de conectarse a la base durante el build.
+      SQLX_OFFLINE: "true"
     volumes:
       # Se monta el repo completo: cargo-watch recompila al detectar cambios (hot-reload).
       - ./:/usr/src/app
