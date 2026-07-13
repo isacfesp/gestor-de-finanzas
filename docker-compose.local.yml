@@ -1,0 +1,20 @@
+# Override SOLO para desarrollo local. Se usa junto al docker-compose.yml
+# base:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+#
+# Agrega los "ports" que el archivo base ya no tiene (ese va limpio para
+# que Easypanel lo despliegue sin chocar con puertos de otros proyectos
+# de la misma VPS). Aquí sí queremos entrar por localhost desde el
+# navegador y poder conectar DBeaver/sqlx-cli a la base.
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  app:
+    ports:
+      - "${PORT}:${PORT}"
+
+  frontend:
+    ports:
+      - "8080:8080"

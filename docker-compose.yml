@@ -1,11 +1,19 @@
-# Orquestación del proyecto. Se levanta desde la raíz del repo con:
-#   docker compose up --build
+# Orquestación del proyecto, pensada para el deploy (Easypanel construye
+# directo desde este archivo). Sin "ports" en ningún servicio: nadie
+# publica puertos al host, todo se resuelve por nombre de servicio dentro
+# de la red interna de compose (db, app, frontend) — así Easypanel puede
+# enrutar por su propio proxy sin chocar con puertos de otros proyectos
+# en la misma VPS.
+#
+# Para desarrollo local, donde sí necesitas entrar por localhost desde el
+# navegador, usa:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
 #
 # Compose lee las variables ${...} del archivo .env que está en esta misma
 # carpeta (la raíz). Por eso el .env vive aquí y no en backend/.
 #
 # Tres servicios: db (Postgres), app (backend, hot-reload con cargo-watch)
-# y frontend (Trunk sirviendo el SPA con hot-reload), en http://localhost:8080.
+# y frontend (Trunk sirviendo el SPA con hot-reload).
 
 services:
   db:
@@ -35,8 +43,6 @@ services:
     build:
       context: backend/docker # ahí vive el Dockerfile; el código no se copia, se monta abajo
     restart: always
-    ports:
-      - "${PORT}:${PORT}"
     environment:
       # Dentro de la red de compose, la base de datos se llama "db", no localhost.
       DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
@@ -57,8 +63,6 @@ services:
     build:
       context: frontend/docker # ahí vive el Dockerfile; el código no se copia, se monta abajo
     restart: always
-    ports:
-      - "8080:8080"
     volumes:
       # Mismo repo completo que "app": frontend/ es miembro del mismo
       # workspace de Cargo y necesita ver el Cargo.toml/lock de la raíz.
