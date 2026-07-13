@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.id, b.workspace_id, c.name AS category_name, b.limit_amount,\n                  COALESCE(SUM(t.amount), 0) AS \"spent!\"\n           FROM budgets b\n           JOIN categories c ON c.id = b.category_id\n           LEFT JOIN transactions t\n               ON t.category_id = b.category_id\n              AND t.workspace_id = b.workspace_id\n              AND t.type = 'expense'\n              AND t.is_active = true\n              AND date_trunc('month', t.date) = b.month\n           WHERE b.month = $1\n           GROUP BY b.id, c.name, b.limit_amount",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "category_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "limit_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "spent!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "7ad4a87ded84b6f73b986e6153bd5c62541ae1112176a42ea98df4b864a162db"
+}

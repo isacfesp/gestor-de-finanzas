@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, type AS \"tipo\", amount, date,\n                  category_id, account_id, description, created_by, created_at\n           FROM transactions\n           WHERE workspace_id = $1\n             AND is_active = true\n             AND ($2::text IS NULL OR type = $2)\n             AND ($3::uuid IS NULL OR category_id = $3)\n             AND ($4::date IS NULL OR date >= $4)\n             AND ($5::date IS NULL OR date <= $5)\n             AND ($6::uuid IS NULL OR EXISTS (\n                   SELECT 1 FROM transaction_tags tt\n                   WHERE tt.transaction_id = transactions.id AND tt.tag_id = $6\n                 ))\n           ORDER BY date DESC, created_at DESC\n           LIMIT $7 OFFSET $8",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "tipo",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Date",
+        "Date",
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c8f47be97551c7ec2e741ee35b03ebdb4a63719be4a5f113ab618b68832a8ff1"
+}

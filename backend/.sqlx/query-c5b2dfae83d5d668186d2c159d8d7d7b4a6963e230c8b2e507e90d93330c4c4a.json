@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, COALESCE(u.name, 'Sistema') AS \"actor_name!\", w.name AS \"workspace_name?\",\n                  a.action, a.detail, a.created_at\n           FROM audit_log a\n           LEFT JOIN users u ON u.id = a.user_id\n           LEFT JOIN workspaces w ON w.id = a.workspace_id\n           ORDER BY a.created_at DESC\n           LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "actor_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "workspace_name?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "detail",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c5b2dfae83d5d668186d2c159d8d7d7b4a6963e230c8b2e507e90d93330c4c4a"
+}

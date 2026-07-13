@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tags SET is_active = false WHERE id = $1 AND workspace_id = $2 AND is_active = true",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "49323a15a6dcbfbe36c20dd042a44668e1ca34b044cf87b5994e70f0dfd52178"
+}

@@ -1,0 +1,50 @@
+# Imagen de producción para Easypanel (build directo desde la URL de GitHub).
+#
+# El Dockerfile.prod es distinto del Dockerfile normal: ese usa
+# `cargo watch` y espera que docker-compose monte el código como volumen
+# (hot-reload local); en producción no hay bind mount, así que aquí se
+# copia el código y se compila un binario release autocontenido.
+#
+# Build multi-stage: la etapa "builder" tiene toolchain de Rust completo
+# (~1.5GB), la etapa final solo el binario + libs de sistema (~100MB) —
+# así la imagen que corre en Easypanel no arrastra el compilador.
+
+FROM rust:1-slim AS builder
+
+RUN apt-get update && apt-get install -y build-essential libssl-dev pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src/app
+
+# Se copia el workspace completo (backend + frontend) porque el Cargo.toml
+# raíz declara ambos miembros; frontend no se compila aquí, pero Cargo
+# necesita verlo para resolver el workspace.
+COPY . .
+
+# sqlx::query!/query_as! necesitan una base de datos real para validar el
+# SQL en tiempo de compilación (no hay caché .sqlx en el repo). Easypanel
+# no tiene Postgres disponible durante el build, así que se activa el modo
+# offline con SQLX_OFFLINE=true — sqlx entonces confía en la sintaxis sin
+# validarla contra un esquema real (ya la valida la CI de GitHub Actions
+# antes de que el código llegue a main).
+ENV SQLX_OFFLINE=true
+RUN cargo build --release -p gestor
+
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y libssl3 ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --system --create-home appuser
+
+WORKDIR /app
+COPY --from=builder /usr/src/app/target/release/gestor /app/gestor
+# Las migraciones quedan embebidas en el binario por sqlx::migrate!, no
+# hace falta copiar backend/migrations aquí.
+
+USER appuser
+
+# PORT se pasa como variable de entorno desde el panel de Easypanel; este
+# valor solo es el que documenta qué puerto expone la imagen.
+EXPOSE 3000
+
+CMD ["/app/gestor"]

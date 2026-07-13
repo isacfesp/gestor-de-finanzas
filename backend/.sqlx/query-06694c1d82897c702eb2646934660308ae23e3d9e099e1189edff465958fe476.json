@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH gastos AS (\n               SELECT t.category_id, COALESCE(c.name, 'Sin categoría') AS category_name,\n                      SUM(t.amount) AS monto\n               FROM transactions t\n               LEFT JOIN categories c ON c.id = t.category_id\n               WHERE t.workspace_id = $1 AND t.type = 'expense' AND t.is_active = true\n                 AND ($2::date IS NULL OR t.date >= $2)\n                 AND ($3::date IS NULL OR t.date <= $3)\n               GROUP BY t.category_id, c.name\n           )\n           SELECT category_id, category_name AS \"category_name!\", monto AS \"amount!\",\n                  (monto * 100 / SUM(monto) OVER ()) AS \"percentage!\"\n           FROM gastos\n           ORDER BY monto DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "category_name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "percentage!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "06694c1d82897c702eb2646934660308ae23e3d9e099e1189edff465958fe476"
+}

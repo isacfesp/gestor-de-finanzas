@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE refresh_tokens SET expires_at = now() WHERE user_id = $1 AND expires_at > now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "43f8e5f9be909afb68c1ad54431cbca4dbe59d548b0ca5be98fc729a73023ea0"
+}

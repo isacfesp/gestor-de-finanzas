@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, target_amount, current_amount,\n                  GREATEST(target_amount - current_amount, 0) AS \"remaining_amount!\",\n                  (current_amount * 100 / target_amount) AS \"percentage!\",\n                  deadline, is_completed\n           FROM goals\n           WHERE id = $1 AND workspace_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "target_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "current_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "remaining_amount!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "percentage!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "deadline",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_completed",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "8dff472c6c82c3486a034e3c9888610d346ce267f65ccb1a302a5904625c43a0"
+}
