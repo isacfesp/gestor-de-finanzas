@@ -11,10 +11,12 @@ services:
   db:
     image: postgres:15-alpine
     restart: always
-    ports:
-      # 127.0.0.1 = solo accesible desde esta máquina (para sqlx-cli, DBeaver...).
-      # Sin ese prefijo el puerto quedaría expuesto a toda la red local.
-      - "127.0.0.1:5432:5432"
+    # Sin "ports": el backend ya llega a Postgres por "db:5432" dentro de la
+    # red interna de compose, no hace falta publicarlo al host. Publicarlo
+    # rompía el deploy en Easypanel cuando otro proyecto de la misma VPS ya
+    # tenía el 5432 del host ocupado. Para conectar DBeaver/sqlx-cli en
+    # local usa `docker compose exec db psql -U $DB_USER -d $DB_NAME`, o
+    # agrega el mapeo de vuelta solo en tu máquina si lo necesitas.
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
