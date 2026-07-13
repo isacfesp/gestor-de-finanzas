@@ -1,0 +1,11 @@
+-- Une cada suscripción con la cuenta de la que sale el cobro, para que
+-- "marcar como cobrada" pueda generar el gasto real (ajustar el saldo
+-- de la cuenta + insertar la transacción), igual que ya hace
+-- `planned_transactions.account_id` para los previstos.
+--
+-- Nullable a propósito, a diferencia de `transactions.account_id`: una
+-- suscripción sin cuenta asignada sigue siendo válida (el catálogo de
+-- gastos fijos existía antes de esta columna) — "marcar cobrada" solo
+-- genera el movimiento si hay cuenta, y si no, se comporta como antes
+-- (solo avanza `next_billing_date`).
+ALTER TABLE subscriptions ADD COLUMN account_id UUID REFERENCES accounts(id);

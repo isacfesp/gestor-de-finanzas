@@ -82,6 +82,9 @@ pub struct DatosAporte<'a> {
     pub tipo: Option<&'a str>,
     pub date: NaiveDate,
     pub description: Option<&'a str>,
+    /// Cuenta de la que sale el aporte (o a la que vuelve un retiro) —
+    /// obligatoria, un aporte siempre mueve dinero real.
+    pub account_id: Uuid,
 }
 
 /// POST /workspaces/:workspace_id/metas/:id/aportes — devuelve la Meta

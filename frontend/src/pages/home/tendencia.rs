@@ -37,6 +37,9 @@ pub fn Tendencia(workspace_id: Uuid) -> impl IntoView {
             {move || match svg.get() {
                 None => view! { <p class="text-soft">"Calculando..."</p> }.into_any(),
                 Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
+                Some(Ok(marcado)) if marcado.is_empty() => {
+                    view! { <p class="text-soft">"Sin movimientos en este período."</p> }.into_any()
+                }
                 Some(Ok(marcado)) => {
                     view! { <div class="overflow-x-auto" inner_html=marcado></div> }.into_any()
                 }

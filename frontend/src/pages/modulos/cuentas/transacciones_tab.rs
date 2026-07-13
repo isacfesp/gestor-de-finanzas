@@ -603,6 +603,10 @@ where
     // Al cambiar de operación, la cuenta elegida puede quedar fuera del
     // nuevo filtro (ej. tenías "Efectivo" y pasas a Ahorro) — se reasigna
     // a la primera cuenta válida para no mandar una cuenta incompatible.
+    // La categoría se limpia por la misma razón: Ingreso/Ahorro y Gasto
+    // filtran categorías de distinto tipo (el backend valida que
+    // coincidan), y una ya elegida del tipo viejo quedaría inválida sin
+    // que se note en el `<select>`.
     let cambiar_operacion = move |ev| {
         let nueva = Operacion::desde_texto(&event_target_value(&ev));
         operacion.set(nueva);
@@ -619,6 +623,7 @@ where
                 .map(|c| c.id.to_string())
                 .unwrap_or_default(),
         );
+        categoria_id.set(String::new());
     };
 
     let guardar = move |ev: SubmitEvent| {

@@ -40,6 +40,13 @@ fn validar_monto(monto: Decimal) -> Result<(), AppError> {
     }
 }
 
+/// Cuánto (y en qué sentido) mueve el saldo de la cuenta al marcar un
+/// previsto como pagado: positivo si es ingreso, negativo si es gasto
+/// — mismo criterio que `accounting::transacciones::ajuste_balance`.
+fn ajuste_balance(tipo: &str, monto: Decimal) -> Decimal {
+    if tipo == "income" { monto } else { -monto }
+}
+
 /// Valida tipo, monto y, si vienen, que categoría y cuenta sean
 /// visibles desde el workspace.
 async fn validar_datos(
@@ -173,12 +180,24 @@ pub async fn actualizar(
 }
 
 /// POST /workspaces/:workspace_id/previstos/:id/marcar-pagado
+///
+/// Si el previsto tiene cuenta asignada, además de cambiar el estado
+/// genera el movimiento real: bloquea esa cuenta, ajusta su saldo e
+/// inserta la transacción correspondiente — mismo patrón que
+/// `accounting::transacciones::crear`, todo en una sola transacción de
+/// BD. La fecha de la transacción es `due_date` (cuando el previsto
+/// vencía), no la fecha en que se marca pagado, para que caiga en el
+/// mes correcto de presupuestos/reportes aunque se marque tarde. Sin
+/// cuenta asignada, se mantiene el comportamiento anterior: solo
+/// cambia el estado.
 pub async fn marcar_pagado(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Previsto>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    let mut tx = pool.begin().await?;
 
     let fila = sqlx::query_as!(
         Previsto,
@@ -189,9 +208,48 @@ pub async fn marcar_pagado(
         id,
         workspace_id
     )
-    .fetch_optional(&pool)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Previsto no encontrado".to_string()))?;
+
+    if let Some(account_id) = fila.account_id {
+        let cuenta = sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+            account_id,
+            workspace_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        if cuenta.is_none() {
+            return Err(AppError::NoEncontrado("Cuenta no encontrada".to_string()));
+        }
+
+        sqlx::query!(
+            "UPDATE accounts SET balance = balance + $1 WHERE id = $2",
+            ajuste_balance(&fila.tipo, fila.amount),
+            account_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!(
+            r#"INSERT INTO transactions
+                   (workspace_id, type, amount, date, category_id, account_id, description, created_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+            workspace_id,
+            fila.tipo,
+            fila.amount,
+            fila.due_date,
+            fila.category_id,
+            account_id,
+            fila.description,
+            usuario.id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
 
     auditoria::registrar(
         &pool,

@@ -18,10 +18,19 @@ use crate::accounting::models::{
     ActualizarSuscripcionDatos, CrearSuscripcionDatos, FiltroProximosCobros, FiltrosSuscripciones,
     Suscripcion,
 };
+use crate::accounts::validar_cuenta;
 use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
+
+/// Cuánto (y en qué sentido) mueve el saldo de la cuenta al marcar una
+/// suscripción como cobrada: siempre negativo, una suscripción es por
+/// definición un gasto — mismo criterio que
+/// `accounting::transacciones::ajuste_balance`.
+fn ajuste_balance(monto: Decimal) -> Decimal {
+    -monto
+}
 
 const PERIODICIDADES: [&str; 4] = ["monthly", "bimonthly", "quarterly", "annual"];
 
@@ -84,6 +93,9 @@ pub async fn crear(
     validar_periodicidad(&datos.periodicity)?;
     validar_monto(datos.amount)?;
     validar_categoria_opcional(&pool, workspace_id, datos.category_id).await?;
+    if let Some(account_id) = datos.account_id {
+        validar_cuenta(&pool, account_id, workspace_id).await?;
+    }
 
     if datos.name.trim().is_empty() {
         return Err(AppError::NoProcesable(
@@ -94,16 +106,17 @@ pub async fn crear(
     let fila = sqlx::query_as!(
         Suscripcion,
         r#"INSERT INTO subscriptions
-               (workspace_id, name, amount, category_id, periodicity, next_billing_date)
-           VALUES ($1, $2, $3, $4, $5, $6)
+               (workspace_id, name, amount, category_id, periodicity, next_billing_date, account_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING id, workspace_id, name, amount, category_id, periodicity,
-                     next_billing_date, is_active, created_at"#,
+                     next_billing_date, is_active, created_at, account_id"#,
         workspace_id,
         datos.name.trim(),
         datos.amount,
         datos.category_id,
         datos.periodicity,
-        datos.next_billing_date
+        datos.next_billing_date,
+        datos.account_id
     )
     .fetch_one(&pool)
     .await?;
@@ -132,7 +145,7 @@ pub async fn listar(
     let filas = sqlx::query_as!(
         Suscripcion,
         r#"SELECT id, workspace_id, name, amount, category_id, periodicity,
-                  next_billing_date, is_active, created_at
+                  next_billing_date, is_active, created_at, account_id
            FROM subscriptions
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
@@ -164,7 +177,7 @@ pub async fn proximos_cobros(
     let filas = sqlx::query_as!(
         Suscripcion,
         r#"SELECT id, workspace_id, name, amount, category_id, periodicity,
-                  next_billing_date, is_active, created_at
+                  next_billing_date, is_active, created_at, account_id
            FROM subscriptions
            WHERE workspace_id = $1 AND is_active = true AND next_billing_date <= $2
            ORDER BY next_billing_date"#,
@@ -188,21 +201,25 @@ pub async fn actualizar(
     validar_periodicidad(&datos.periodicity)?;
     validar_monto(datos.amount)?;
     validar_categoria_opcional(&pool, workspace_id, datos.category_id).await?;
+    if let Some(account_id) = datos.account_id {
+        validar_cuenta(&pool, account_id, workspace_id).await?;
+    }
 
     let fila = sqlx::query_as!(
         Suscripcion,
         r#"UPDATE subscriptions
            SET name = $1, amount = $2, category_id = $3, periodicity = $4,
-               next_billing_date = $5, is_active = $6
-           WHERE id = $7 AND workspace_id = $8
+               next_billing_date = $5, is_active = $6, account_id = $7
+           WHERE id = $8 AND workspace_id = $9
            RETURNING id, workspace_id, name, amount, category_id, periodicity,
-                     next_billing_date, is_active, created_at"#,
+                     next_billing_date, is_active, created_at, account_id"#,
         datos.name.trim(),
         datos.amount,
         datos.category_id,
         datos.periodicity,
         datos.next_billing_date,
         datos.is_active,
+        datos.account_id,
         id,
         workspace_id
     )
@@ -225,7 +242,14 @@ pub async fn actualizar(
 /// POST /workspaces/:workspace_id/suscripciones/:id/marcar-cobrada
 ///
 /// Avanza `next_billing_date` según la periodicidad, para reflejar que
-/// el cobro de este ciclo ya ocurrió.
+/// el cobro de este ciclo ya ocurrió. Si la suscripción tiene cuenta
+/// asignada, además genera el movimiento real: bloquea esa cuenta,
+/// resta el monto de su saldo e inserta la transacción — mismo patrón
+/// que `transacciones::crear`, todo en una sola transacción de BD. La
+/// fecha de la transacción es el `next_billing_date` **viejo** (el
+/// cobro que efectivamente correspondía a ese ciclo), no la fecha en
+/// que se marca cobrada. Sin cuenta asignada, se mantiene el
+/// comportamiento anterior: solo avanza la fecha.
 pub async fn marcar_cobrada(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -233,15 +257,17 @@ pub async fn marcar_cobrada(
 ) -> Result<Json<Suscripcion>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
 
+    let mut tx = pool.begin().await?;
+
     let actual = sqlx::query_as!(
         Suscripcion,
         r#"SELECT id, workspace_id, name, amount, category_id, periodicity,
-                  next_billing_date, is_active, created_at
-           FROM subscriptions WHERE id = $1 AND workspace_id = $2"#,
+                  next_billing_date, is_active, created_at, account_id
+           FROM subscriptions WHERE id = $1 AND workspace_id = $2 FOR UPDATE"#,
         id,
         workspace_id
     )
-    .fetch_optional(&pool)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
 
@@ -251,17 +277,55 @@ pub async fn marcar_cobrada(
         .checked_add_months(Months::new(meses))
         .ok_or_else(|| AppError::Interno("Overflow al calcular la próxima fecha".to_string()))?;
 
+    if let Some(account_id) = actual.account_id {
+        let cuenta = sqlx::query_scalar!(
+            "SELECT id FROM accounts WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+            account_id,
+            workspace_id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        if cuenta.is_none() {
+            return Err(AppError::NoEncontrado("Cuenta no encontrada".to_string()));
+        }
+
+        sqlx::query!(
+            "UPDATE accounts SET balance = balance + $1 WHERE id = $2",
+            ajuste_balance(actual.amount),
+            account_id
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!(
+            r#"INSERT INTO transactions
+                   (workspace_id, type, amount, date, category_id, account_id, description, created_by)
+               VALUES ($1, 'expense', $2, $3, $4, $5, $6, $7)"#,
+            workspace_id,
+            actual.amount,
+            actual.next_billing_date,
+            actual.category_id,
+            account_id,
+            actual.name,
+            usuario.id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
     let fila = sqlx::query_as!(
         Suscripcion,
         r#"UPDATE subscriptions SET next_billing_date = $1
            WHERE id = $2
            RETURNING id, workspace_id, name, amount, category_id, periodicity,
-                     next_billing_date, is_active, created_at"#,
+                     next_billing_date, is_active, created_at, account_id"#,
         siguiente,
         id
     )
-    .fetch_one(&pool)
+    .fetch_one(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     auditoria::registrar(
         &pool,

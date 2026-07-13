@@ -41,6 +41,10 @@ pub struct Suscripcion {
     pub periodicity: String,
     pub next_billing_date: NaiveDate,
     pub is_active: bool,
+    /// Cuenta de la que sale el cobro — si está presente, "marcar
+    /// cobrada" genera el gasto real (ajusta saldo + transacción); si
+    /// no, solo avanza `next_billing_date` (comportamiento previo).
+    pub account_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,6 +54,7 @@ pub struct DatosSuscripcion<'a> {
     pub category_id: Option<Uuid>,
     pub periodicity: &'a str,
     pub next_billing_date: NaiveDate,
+    pub account_id: Option<Uuid>,
 }
 
 /// Reemplazo completo (PUT); incluye `is_active` porque el mismo endpoint
@@ -62,6 +67,7 @@ pub struct ActualizarSuscripcionDatos<'a> {
     pub periodicity: &'a str,
     pub next_billing_date: NaiveDate,
     pub is_active: bool,
+    pub account_id: Option<Uuid>,
 }
 
 /// GET /workspaces/:workspace_id/suscripciones — trae activas e inactivas.

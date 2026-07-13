@@ -433,7 +433,18 @@ where
             <div class="form-grid">
                 <div class="field">
                     <label>"Tipo"</label>
-                    <select prop:value=move || tipo.get() on:change=move |ev| tipo.set(event_target_value(&ev))>
+                    <select
+                        prop:value=move || tipo.get()
+                        on:change=move |ev| {
+                            tipo.set(event_target_value(&ev));
+                            // La categoría elegida puede quedar de un tipo que ya
+                            // no coincide con el nuevo Tipo (el backend valida
+                            // que sean del mismo tipo) — se limpia para no
+                            // mandar una combinación inválida sin que el usuario
+                            // se dé cuenta.
+                            categoria_id.set(String::new());
+                        }
+                    >
                         <option value="expense">"Egreso"</option>
                         <option value="income">"Ingreso"</option>
                     </select>

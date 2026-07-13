@@ -156,6 +156,15 @@ pub async fn tendencia(
     let egresos: Vec<f32> = grilla.iter().map(|m| monto_de(*m, |_, e| *e)).collect();
     let etiquetas: Vec<String> = grilla.iter().map(|m| etiqueta_mes(*m)).collect();
 
+    // Sin esto, cuando no hay movimientos en todo el rango (workspace
+    // nuevo/de prueba) `charts-rs` calcula el eje Y como min == max ==
+    // 0.0 y termina dividiendo 0.0/0.0 = NaN para cada punto — mismo
+    // criterio de "cortar antes de dividir" que ya usa
+    // `metricas::tasa_ahorro` para `total_income == 0`.
+    if ingresos.iter().chain(egresos.iter()).all(|v| *v == 0.0) {
+        return Ok(Json(GraficoSvg { svg: String::new() }));
+    }
+
     let paleta = paleta(filtro.tema.as_deref());
     let mut grafico = LineChart::new(
         vec![
@@ -211,6 +220,14 @@ pub async fn flujo_pastel(
     )
     .fetch_all(&pool)
     .await?;
+
+    // `PieChart` con lista vacía ya degrada bien hoy (no dibuja
+    // ninguna rebanada), pero no depender de ese detalle no
+    // documentado de una dependencia externa — cortar acá es más
+    // robusto y barato.
+    if filas.is_empty() {
+        return Ok(Json(GraficoSvg { svg: String::new() }));
+    }
 
     let paleta = paleta(filtro.tema.as_deref());
     let series_list: Vec<Series> = filas

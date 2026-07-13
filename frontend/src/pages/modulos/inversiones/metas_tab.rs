@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use super::util::{confirmar, hoy};
+use crate::api::accounts;
 use crate::api::goals::{self, Meta};
 use crate::auth::{token_vigente, use_auth};
 
@@ -427,6 +428,15 @@ where
         }
     });
 
+    let cuentas = LocalResource::new(move || async move {
+        let Some(token) = token_vigente(auth).await else {
+            return Vec::new();
+        };
+        accounts::listar_cuentas(workspace_id, &token)
+            .await
+            .unwrap_or_default()
+    });
+
     view! {
         <div>
             <div class="panel-head">
@@ -507,6 +517,7 @@ where
                     <FormularioAporte
                         workspace_id=workspace_id
                         meta_id=meta_actual.get().id
+                        cuentas=cuentas.get().unwrap_or_default()
                         on_guardado=move |meta_actualizada: Meta| {
                             meta_actual.set(meta_actualizada);
                             mostrar_aporte.set(false);
@@ -568,6 +579,7 @@ where
 fn FormularioAporte<F1, F2>(
     workspace_id: Uuid,
     meta_id: Uuid,
+    cuentas: Vec<accounts::Cuenta>,
     on_guardado: F1,
     on_cancelar: F2,
 ) -> impl IntoView
@@ -580,6 +592,7 @@ where
     let tipo = RwSignal::new("income".to_string());
     let fecha = RwSignal::new(hoy().to_string());
     let descripcion = RwSignal::new(String::new());
+    let cuenta_id = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
 
@@ -593,6 +606,10 @@ where
         };
         let Ok(date) = fecha.get_untracked().parse::<NaiveDate>() else {
             error.set(Some("La fecha no es válida".to_string()));
+            return;
+        };
+        let Ok(account_id) = Uuid::parse_str(&cuenta_id.get_untracked()) else {
+            error.set(Some("Elige de qué cuenta sale el aporte".to_string()));
             return;
         };
 
@@ -615,6 +632,7 @@ where
                 } else {
                     Some(descripcion_actual.trim())
                 },
+                account_id,
             };
 
             let resultado = goals::registrar_aporte(workspace_id, meta_id, &datos, &token).await;
@@ -652,6 +670,23 @@ where
                         prop:value=move || fecha.get()
                         on:input=move |ev| fecha.set(event_target_value(&ev))
                     />
+                </div>
+                <div class="field">
+                    <label>"Cuenta"</label>
+                    <select
+                        prop:value=move || cuenta_id.get()
+                        on:change=move |ev| cuenta_id.set(event_target_value(&ev))
+                        required
+                    >
+                        <option value="">"Elige una cuenta"</option>
+                        {cuentas
+                            .iter()
+                            .map(|c| {
+                                let id = c.id.to_string();
+                                view! { <option value=id.clone()>{c.name.clone()}</option> }
+                            })
+                            .collect_view()}
+                    </select>
                 </div>
                 <div class="field">
                     <label>"Descripción (opcional)"</label>
