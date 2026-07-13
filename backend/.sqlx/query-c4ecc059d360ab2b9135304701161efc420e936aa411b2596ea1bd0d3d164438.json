@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT principal, gat_annual_rate, interest_type, term_days\n           FROM investments WHERE id = $1 AND workspace_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "principal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "gat_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "interest_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "term_days",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c4ecc059d360ab2b9135304701161efc420e936aa411b2596ea1bd0d3d164438"
+}

@@ -1,0 +1,28 @@
+# Plantilla de nginx para la imagen de producción (Dockerfile.prod).
+#
+# Replica el proxy que Trunk.docker.toml hace en desarrollo: /auth,
+# /admin y /workspaces van al backend, todo lo demás es el SPA estático
+# con fallback a index.html (para que leptos_router maneje las rutas).
+# BACKEND_HOST/BACKEND_PORT los define Easypanel según el nombre real
+# del servicio del backend en ese proyecto.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    location /auth/ {
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/auth/;
+    }
+
+    location /admin/ {
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/admin/;
+    }
+
+    location /workspaces/ {
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/workspaces/;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

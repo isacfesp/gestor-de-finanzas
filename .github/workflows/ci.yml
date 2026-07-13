@@ -1,0 +1,94 @@
+# CI: valida cada push/PR antes de que Easypanel despliegue lo que llega
+# a main (Easypanel está conectado directo al repo de GitHub y reconstruye
+# solo con lo que hay en la rama). Protege main con esta CI como check
+# obligatorio para que un `cargo check` roto no llegue a producción.
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Formato (fmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  backend:
+    name: Backend (clippy + check + test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: gestor_ci
+          POSTGRES_PASSWORD: gestor_ci
+          POSTGRES_DB: gestor_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gestor_ci -d gestor_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://gestor_ci:gestor_ci@localhost:5432/gestor_ci
+      PORT: 3000
+      JWT_SECRET: ci-secret-no-usar-en-produccion
+      DEV_EMAIL: dev@ci.local
+      DEV_PASSWORD: ci-password-no-usar-en-produccion
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      # sqlx::query!/query_as! validan el SQL contra una base real en
+      # tiempo de compilación (no hay caché .sqlx en el repo), por eso
+      # las migraciones deben correr ANTES de check/clippy/build.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli@0.8
+
+      - name: Correr migraciones
+        run: sqlx migrate run --source backend/migrations
+
+      - run: cargo clippy -p gestor --all-targets -- -D warnings
+      - run: cargo check -p gestor
+      - run: cargo test -p gestor
+      - run: cargo build -p gestor --release
+
+  frontend:
+    name: Frontend (clippy + check, target wasm32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      - run: cargo clippy -p frontend --target wasm32-unknown-unknown --all-targets -- -D warnings
+      - run: cargo check -p frontend --target wasm32-unknown-unknown

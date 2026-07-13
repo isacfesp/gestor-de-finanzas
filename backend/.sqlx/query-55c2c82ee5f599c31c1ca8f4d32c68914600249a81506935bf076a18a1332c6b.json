@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.id, b.category_id, c.name AS category_name, b.month, b.limit_amount,\n                  COALESCE(SUM(t.amount), 0) AS \"spent!\",\n                  (COALESCE(SUM(t.amount), 0) * 100 / b.limit_amount) AS \"percentage!\"\n           FROM budgets b\n           JOIN categories c ON c.id = b.category_id\n           LEFT JOIN transactions t\n               ON t.category_id = b.category_id\n              AND t.workspace_id = b.workspace_id\n              AND t.type = 'expense'\n              AND t.is_active = true\n              AND date_trunc('month', t.date) = b.month\n           WHERE b.workspace_id = $1 AND b.month = $2\n           GROUP BY b.id, c.name\n           ORDER BY c.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "category_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "month",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 4,
+        "name": "limit_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "spent!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "percentage!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "55c2c82ee5f599c31c1ca8f4d32c68914600249a81506935bf076a18a1332c6b"
+}
