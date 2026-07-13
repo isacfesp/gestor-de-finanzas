@@ -136,7 +136,7 @@ pub async fn listar(
            FROM subscriptions
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
-           ORDER BY next_billing_date"#,
+           ORDER BY is_active DESC, next_billing_date"#,
         workspace_id,
         filtros.activas
     )

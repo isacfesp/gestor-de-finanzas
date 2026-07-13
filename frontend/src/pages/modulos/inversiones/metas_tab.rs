@@ -339,6 +339,7 @@ where
                     <label>"Monto objetivo"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || monto_objetivo.get()
                         on:input=move |ev| monto_objetivo.set(event_target_value(&ev))
                     />
@@ -639,6 +640,7 @@ where
                     <label>"Monto"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || monto.get()
                         on:input=move |ev| monto.set(event_target_value(&ev))
                     />

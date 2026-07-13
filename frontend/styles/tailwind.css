@@ -1,14 +1,26 @@
 /* =====================================================================
-   main.css — Sistema de diseño "Geck".
+   tailwind.css — Sistema de diseño "Geck" sobre Tailwind CSS v3.
 
-   Importado desde el proyecto de Claude Design "Login corporativo
-   gestor finanzas" (Geck.dc.html): dashboard financiero con paleta
-   cian sobre azul marino muy oscuro (tema oscuro) o blanco azulado
-   (tema claro), tipografía Plus Jakarta Sans (texto) + JetBrains Mono
-   (cifras y etiquetas técnicas). Los paneles de contenido son tarjetas
-   sólidas con borde fino — el efecto de vidrio (`--glass` + blur) se
-   reserva para chrome flotante (topbar, dropdowns), no para tarjetas.
-   ===================================================================== */
+   Reemplaza a `main.css` (retirado). Es la versión que trae el binario
+   standalone que descarga Trunk (no soporta la sintaxis `@import
+   "tailwindcss"`/`@theme` de v4) — el mapeo de colores/fuentes/radios a
+   utilidades vive en `tailwind.config.js` (`theme.extend`), no aquí.
+   Los mismos tokens de color/tema (paleta cian sobre azul marino oscuro
+   / blanco azulado claro, tipografía Plus Jakarta Sans + JetBrains
+   Mono) siguen viviendo en `:root` / `:root[data-theme]` — los colores
+   de `tailwind.config.js` apuntan a esas variables (`var(--accent)`,
+   no el hex), así que utilidades como `bg-accent`/`text-muted` siguen
+   reaccionando en vivo al atributo `data-theme` que pone `theme.rs`.
+
+   Migración incremental: por ahora solo `components/shell.rs` usa
+   utilidades de Tailwind. El resto de clases de abajo (`.panel`,
+   `.btn`, `.field`, etc.) son las mismas de `main.css` tal cual,
+   envueltas en `@layer components` para que, cuando le toque su turno
+   a cada página, una utilidad de Tailwind sí pueda pisarlas (las capas
+   de Tailwind se ordenan base < components < utilities sin importar el
+   orden en el archivo). */
+
+@tailwind base;
 
 * {
   box-sizing: border-box;
@@ -228,6 +240,12 @@ button {
   --series-7: #e87ba4;
   --series-8: #eb6834;
 }
+
+@tailwind components;
+
+/* Todo lo de abajo, hasta `@tailwind utilities`, son las clases de
+   `main.css` sin cambios — ver la nota de cascada al inicio del archivo. */
+@layer components {
 
 /* ------------------------------ Tipografía ------------------------------ */
 
@@ -753,175 +771,10 @@ button {
   margin-bottom: 24px;
 }
 
-/* ------------------------------ App shell ------------------------------ */
-
-.app-shell {
-  display: flex;
-  min-height: 100dvh;
-  background: var(--bg);
-}
-
-.app-nav {
-  width: 250px;
-  flex: none;
-  background: var(--sidebar);
-  border-right: 1px solid var(--line);
-  padding: 22px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: sticky;
-  top: 0;
-  height: 100dvh;
-  overflow-y: auto;
-}
-
-.app-nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px 22px;
-}
-
-.app-nav-brand .brand-word {
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
-
-.app-nav-section {
-  font: 600 10px var(--font-mono);
-  color: var(--faint);
-  letter-spacing: 0.08em;
-  padding: 18px 10px 6px;
-}
-
-.app-nav-section:first-of-type {
-  padding-top: 8px;
-}
-
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--muted);
-  text-align: left;
-  transition: background .16s, color .16s;
-}
-
-.nav-link:hover {
-  background: var(--hover);
-}
-
-.nav-link svg {
-  width: 19px;
-  height: 19px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  flex: none;
-}
-
-.nav-link.is-active,
-.nav-link[aria-current="page"] {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.app-nav-help {
-  margin-top: auto;
-  background: linear-gradient(150deg, #123a63, #0a1a3a);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 16px;
-  position: relative;
-  overflow: hidden;
-}
-
-.app-nav-help::before {
-  content: "";
-  position: absolute;
-  width: 120px;
-  height: 120px;
-  right: -40px;
-  top: -40px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(34, 211, 238, .35), transparent 70%);
-}
-
-.app-nav-help p {
-  position: relative;
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #eaf0ff;
-}
-
-.app-nav-help p.text-soft {
-  margin: 0 0 12px;
-  font-size: 12px;
-  font-weight: 400;
-  color: rgba(234, 240, 255, .6);
-}
-
-.app-nav-help .btn-ghost {
-  position: relative;
-  width: 100%;
-  border: none;
-  background: rgba(255, 255, 255, .08);
-  color: #eaf0ff;
-}
-
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 30px;
-  border-bottom: 1px solid var(--line);
-}
-
-.app-workspace {
-  font: 600 11px var(--font-mono);
-  color: var(--faint);
-}
-
-.app-user-btn {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: transparent;
-  border: 1px solid var(--card-line);
-  border-radius: var(--radius-sm);
-  padding: 5px 10px 5px 6px;
-  color: var(--text);
-}
-
-.app-user-btn:hover {
-  background: var(--hover);
-}
-
-.app-user-btn .avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #8b5cf6, var(--accent));
-  color: #04222e;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-}
+/* ------------------------------ App shell: iconos compartidos ------------------------------ */
+/* `.app-icon-btn`/`.app-notif-btn` siguen viviendo aquí (no en utilidades
+   de Tailwind) porque `components/notificaciones.rs` también los usa —
+   `components/shell.rs` ya migró el resto de su estructura. */
 
 .app-icon-btn {
   position: relative;
@@ -937,8 +790,8 @@ button {
   flex: none;
 }
 
-/* La campana empuja a sí misma (y a todo lo que sigue: avatar, logout)
-   al borde derecho — antes ese trabajo lo hacía .app-user-btn. */
+/* La campana (`.app-notif-btn`, en notificaciones.rs) empuja a sí misma
+   y a todo lo que sigue (avatar, logout) al borde derecho del header. */
 .app-notif-btn {
   margin-left: auto;
 }
@@ -955,57 +808,6 @@ button {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.app-main {
-  flex: 1;
-  min-width: 0;
-  padding: 26px 30px 40px;
-}
-
-/* Móvil: el rail lateral pasa a barra inferior. */
-@media (max-width: 860px) {
-  .app-shell {
-    flex-direction: column;
-  }
-
-  .app-nav {
-    width: auto;
-    height: auto;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: auto;
-    z-index: 5;
-    flex-direction: row;
-    align-items: center;
-    gap: 4px;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-    border-right: none;
-    border-top: 1px solid var(--line);
-    overflow-x: auto;
-    overflow-y: visible;
-  }
-
-  .app-nav-brand,
-  .app-nav-section,
-  .app-nav-help {
-    display: none;
-  }
-
-  .nav-link {
-    flex: none;
-    flex-direction: column;
-    gap: 3px;
-    font-size: 10.5px;
-    padding: 6px 14px;
-    min-width: 64px;
-  }
-
-  .app-main {
-    padding-bottom: 90px;
-  }
 }
 
 /* ------------------------------ Tarjetas de contenido ------------------------------ */
@@ -1027,6 +829,8 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 14px;
 }
 
@@ -1035,6 +839,11 @@ button {
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
+  /* Sin esto, un título largo (nombre de tenant, email) no se achica
+     ni envuelve dentro del flex — empuja el botón de al lado y
+     desborda el panel en viewports angostos. */
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .placeholder-panel {
@@ -1283,6 +1092,7 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 8px;
 }
@@ -1291,6 +1101,8 @@ button {
   margin: 0;
   font-size: 14px;
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .budget-track {
@@ -1410,6 +1222,11 @@ button {
 .notif-dropdown {
   position: fixed;
   width: 340px;
+  /* Respaldo del cálculo en JS (`abrir_menu`, `menu_flotante.rs`): si
+     el viewport es más angosto que 340px + margen, este límite evita
+     que el contenedor se salga de la pantalla aunque la posición ya
+     esté ajustada. */
+  max-width: calc(100vw - 16px);
   max-height: 400px;
   overflow-y: auto;
   background: var(--panel);
@@ -1454,3 +1271,7 @@ button {
   color: var(--muted);
   font-size: 13px;
 }
+
+} /* fin @layer components */
+
+@tailwind utilities;

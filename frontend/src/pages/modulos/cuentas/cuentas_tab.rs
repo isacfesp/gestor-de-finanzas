@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::api::accounts;
 use crate::auth::{token_vigente, use_auth};
+use crate::components::icono_cuenta::IconoCuenta;
 
 #[derive(Clone)]
 enum ModoFormulario {
@@ -101,11 +102,16 @@ where
     view! {
         <div class="panel" style="padding:20px;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                <div>
-                    <h3 style="margin:0; font-size:16px; font-weight:700;">{cuenta.name.clone()}</h3>
-                    <p class="text-soft" style="margin:3px 0 0; font-size:12px;">
-                        {etiqueta_tipo(&cuenta.tipo)} " · " {cuenta.currency.clone()}
-                    </p>
+                <div class="flex items-start gap-2.5">
+                    <span class="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-sm bg-hover text-muted">
+                        <IconoCuenta tipo=cuenta.tipo.clone()/>
+                    </span>
+                    <div>
+                        <h3 style="margin:0; font-size:16px; font-weight:700;">{cuenta.name.clone()}</h3>
+                        <p class="text-soft" style="margin:3px 0 0; font-size:12px;">
+                            {etiqueta_tipo(&cuenta.tipo)} " · " {cuenta.currency.clone()}
+                        </p>
+                    </div>
                 </div>
                 <button class="btn-ghost" style="padding:4px 8px; font-size:11px;" on:click=move |_| on_editar()>
                     "Editar"
@@ -321,6 +327,7 @@ where
                         <label>"Saldo inicial"</label>
                         <input
                             placeholder="0.00"
+                            inputmode="decimal"
                             prop:value=move || saldo_inicial.get()
                             on:input=move |ev| saldo_inicial.set(event_target_value(&ev))
                         />
@@ -331,6 +338,7 @@ where
                         <label>"Límite de crédito"</label>
                         <input
                             placeholder="0.00"
+                            inputmode="decimal"
                             prop:value=move || limite_credito.get()
                             on:input=move |ev| limite_credito.set(event_target_value(&ev))
                         />

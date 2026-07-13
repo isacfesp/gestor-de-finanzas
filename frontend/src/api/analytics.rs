@@ -12,6 +12,14 @@ use uuid::Uuid;
 use super::client;
 use super::error::ApiError;
 
+/// SVG ya armado por el backend (`charts-rs`, ver
+/// `backend/src/analytics/graficos.rs`) — se inyecta directo en el DOM
+/// con el atributo `inner_html` de Leptos, sin pasar por `<img>`.
+#[derive(Debug, Clone, Deserialize)]
+struct GraficoSvg {
+    svg: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct FlujoCaja {
     pub income: Decimal,
@@ -23,13 +31,6 @@ pub struct FlujoCaja {
 pub struct TasaAhorro {
     pub total_income: Decimal,
     pub goal_income: Decimal,
-    pub percentage: Decimal,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DistribucionGasto {
-    pub category_name: String,
-    pub amount: Decimal,
     pub percentage: Decimal,
 }
 
@@ -60,18 +61,38 @@ pub async fn tasa_ahorro(
     client::get(&ruta, token).await
 }
 
-/// GET /workspaces/:workspace_id/analytics/distribucion-gastos?desde=&hasta=
-pub async fn distribucion_gastos(
+/// GET /workspaces/:workspace_id/analytics/charts/tendencia?meses=&tema=
+///
+/// `tema` es "dark"/"light" (`theme::Tema::como_texto()`) — el SVG se
+/// arma con esa paleta en el servidor, así que hay que volver a
+/// pedirlo si el usuario alterna el tema.
+pub async fn tendencia_svg(
+    workspace_id: Uuid,
+    meses: Option<i64>,
+    tema: &str,
+    token: &str,
+) -> Result<String, ApiError> {
+    let mut ruta = format!("/workspaces/{workspace_id}/analytics/charts/tendencia?tema={tema}");
+    if let Some(meses) = meses {
+        ruta.push_str(&format!("&meses={meses}"));
+    }
+    client::get::<GraficoSvg>(&ruta, token).await.map(|g| g.svg)
+}
+
+/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&tema=
+pub async fn flujo_pastel_svg(
     workspace_id: Uuid,
     desde: Option<NaiveDate>,
     hasta: Option<NaiveDate>,
+    tema: &str,
     token: &str,
-) -> Result<Vec<DistribucionGasto>, ApiError> {
+) -> Result<String, ApiError> {
+    let base = query_periodo(desde, hasta);
+    let separador = if base.is_empty() { '?' } else { '&' };
     let ruta = format!(
-        "/workspaces/{workspace_id}/analytics/distribucion-gastos{}",
-        query_periodo(desde, hasta)
+        "/workspaces/{workspace_id}/analytics/charts/flujo-pastel{base}{separador}tema={tema}"
     );
-    client::get(&ruta, token).await
+    client::get::<GraficoSvg>(&ruta, token).await.map(|g| g.svg)
 }
 
 fn query_periodo(desde: Option<NaiveDate>, hasta: Option<NaiveDate>) -> String {

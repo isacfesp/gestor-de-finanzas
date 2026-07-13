@@ -52,3 +52,27 @@ pub struct DistribucionGasto {
     pub amount: Decimal,
     pub percentage: Decimal,
 }
+
+/// `tema` selecciona la paleta claro/oscuro en el momento de generar el
+/// SVG (ver `graficos.rs`) — el servidor no puede reaccionar a un
+/// cambio de tema hecho después en el cliente, así que el frontend
+/// vuelve a pedir el gráfico cuando el usuario alterna el tema.
+#[derive(Debug, Deserialize)]
+pub struct FiltroTendencia {
+    pub meses: Option<i64>,
+    pub tema: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FiltroFlujoPastel {
+    pub desde: Option<NaiveDate>,
+    pub hasta: Option<NaiveDate>,
+    pub tema: Option<String>,
+}
+
+/// SVG ya armado, como texto — el frontend lo inyecta directo con
+/// `inner_html`, sin pasar por `<img>`/Blob.
+#[derive(Debug, Serialize)]
+pub struct GraficoSvg {
+    pub svg: String,
+}

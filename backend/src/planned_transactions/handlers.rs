@@ -117,7 +117,7 @@ pub async fn listar(
              AND ($2::date IS NULL OR due_date >= $2)
              AND ($3::date IS NULL OR due_date <= $3)
              AND ($4::bool IS NULL OR is_paid = $4)
-           ORDER BY due_date"#,
+           ORDER BY is_paid, due_date"#,
         workspace_id,
         filtros.desde,
         filtros.hasta,

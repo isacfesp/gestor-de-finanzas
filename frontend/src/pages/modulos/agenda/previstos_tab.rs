@@ -189,7 +189,7 @@ where
     view! {
         <div class="menu-gear">
             <button type="button" class="menu-gear-btn" title="Acciones" on:click=move |ev| {
-                abrir_menu(ev, abierto, posicion)
+                abrir_menu(ev, abierto, posicion, 180.0)
             }>
                 <svg viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -442,6 +442,7 @@ where
                     <label>"Monto"</label>
                     <input
                         placeholder="0.00"
+                        inputmode="decimal"
                         prop:value=move || monto.get()
                         on:input=move |ev| monto.set(event_target_value(&ev))
                     />

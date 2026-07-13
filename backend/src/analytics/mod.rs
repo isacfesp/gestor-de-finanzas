@@ -1,5 +1,6 @@
 // Puerta de entrada del módulo analytics: métricas agregadas en runtime
 // sobre `transactions`, sin tablas propias (ver docs/database.md).
+mod graficos;
 mod metricas;
 
 pub mod models;
@@ -15,5 +16,10 @@ pub fn router() -> Router<PgPool> {
         .route(
             "/analytics/distribucion-gastos",
             get(metricas::distribucion_gastos),
+        )
+        .route("/analytics/charts/tendencia", get(graficos::tendencia))
+        .route(
+            "/analytics/charts/flujo-pastel",
+            get(graficos::flujo_pastel),
         )
 }
