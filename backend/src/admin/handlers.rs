@@ -428,6 +428,46 @@ pub async fn eliminar_miembro(
     Ok(StatusCode::NO_CONTENT)
 }
 
+// ------------------------- DELETE /admin/workspaces/:id -------------------------
+
+/// Borra un tenant y TODA su información (transacciones, cuentas,
+/// transferencias, categorías propias, etiquetas, suscripciones,
+/// previstos, metas, inversiones, membresías, notificaciones,
+/// invitaciones) en un solo `DELETE`: todas las tablas cuelgan de
+/// `workspaces` (directa o transitivamente) con `ON DELETE CASCADE`
+/// (ver docs/database.md), así que Postgres se encarga de la cascada
+/// completa. Operación irreversible — el frontend exige confirmación
+/// explícita antes de llamar a este endpoint.
+pub async fn eliminar_workspace(
+    State(pool): State<PgPool>,
+    SoloDev(dev): SoloDev,
+    Path(workspace_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    let nombre = sqlx::query_scalar!(
+        "DELETE FROM workspaces WHERE id = $1 RETURNING name",
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Workspace no encontrado".to_string()))?;
+
+    // `workspace_id: None` a propósito: `audit_log.workspace_id`
+    // también tiene `ON DELETE CASCADE`, así que auditar con
+    // `Some(workspace_id)` haría que esta misma fila se autodestruya
+    // en la cascada que acaba de correr — quedaría sin rastro de que
+    // el tenant se borró.
+    auditoria::registrar(
+        &pool,
+        None,
+        Some(dev.id),
+        acciones::WORKSPACE_ELIMINADO,
+        json!({"workspace_id": workspace_id, "name": nombre}),
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ------------------------- POST /admin/usuarios/:id/desactivar -------------------------
 
 /// Desactiva una cuenta (bloquea el login) y revoca sus refresh tokens

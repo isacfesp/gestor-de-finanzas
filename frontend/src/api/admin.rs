@@ -45,6 +45,13 @@ pub async fn crear_workspace(
     client::post("/admin/workspaces", datos, token).await
 }
 
+/// DELETE /admin/workspaces/:id — borra el tenant y TODA su
+/// información (transacciones, cuentas, metas, inversiones,
+/// membresías, etc.), en cascada. Irreversible.
+pub async fn eliminar_workspace(workspace_id: Uuid, token: &str) -> Result<(), ApiError> {
+    client::delete(&format!("/admin/workspaces/{workspace_id}"), token).await
+}
+
 // --------------------------------- Usuarios --------------------------------
 
 /// Usuario tal como lo devuelve el backend en las respuestas de

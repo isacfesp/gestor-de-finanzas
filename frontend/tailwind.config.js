@@ -8,7 +8,11 @@
 // `styles/tailwind.css` (:root / :root[data-theme]).
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./src/**/*.rs"],
+  // `index.html` incluido a propósito: las clases del loader inicial
+  // (`.wasm-loader-*`, ver `styles/tailwind.css`) solo aparecen ahí —
+  // vive fuera del árbol de Leptos — y sin este glob Tailwind las purga
+  // por "no usadas", dejando el loader sin animación.
+  content: ["./src/**/*.rs", "./index.html"],
   theme: {
     extend: {
       colors: {

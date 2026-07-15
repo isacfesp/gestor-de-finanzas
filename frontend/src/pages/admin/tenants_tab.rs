@@ -218,19 +218,66 @@ where
         });
     };
 
+    let borrando_tenant = RwSignal::new(false);
+    let error_borrado = RwSignal::new(None::<String>);
+    let nombre_workspace = workspace.name.clone();
+
+    let borrar_tenant = move |_| {
+        let advertencia = format!(
+            "¿Borrar el tenant \"{nombre_workspace}\"? Esto elimina TODA su información de forma \
+             permanente (transacciones, cuentas, metas, inversiones, suscripciones, previstos y \
+             membresías). No se puede deshacer."
+        );
+        if !confirmar(&advertencia) {
+            return;
+        }
+        error_borrado.set(None);
+        borrando_tenant.set(true);
+        leptos::task::spawn_local(async move {
+            let Some(token) = token_vigente(auth).await else {
+                error_borrado.set(Some("Sesión vencida".to_string()));
+                borrando_tenant.set(false);
+                return;
+            };
+            match admin::eliminar_workspace(workspace_id, &token).await {
+                Ok(()) => on_volver(),
+                Err(error_api) => {
+                    error_borrado.set(Some(error_api.to_string()));
+                    borrando_tenant.set(false);
+                }
+            }
+        });
+    };
+
     view! {
         <div>
             <div class="panel-head">
                 <button class="btn-ghost" on:click=move |_| on_volver()>"← Volver"</button>
                 <h2>{workspace.name.clone()}</h2>
-                <button
-                    class="btn btn-primary"
-                    style="padding:8px 15px; font-size:12.5px;"
-                    on:click=move |_| mostrar_form.set(true)
-                >
-                    "+ Asignar miembro"
-                </button>
+                <div style="display:flex; gap:8px;">
+                    <button
+                        class="btn-ghost"
+                        style="padding:8px 15px; font-size:12.5px; color:var(--negative);"
+                        disabled=move || borrando_tenant.get()
+                        on:click=borrar_tenant
+                    >
+                        {move || if borrando_tenant.get() { "Borrando..." } else { "Borrar tenant" }}
+                    </button>
+                    <button
+                        class="btn btn-primary"
+                        style="padding:8px 15px; font-size:12.5px;"
+                        on:click=move |_| mostrar_form.set(true)
+                    >
+                        "+ Asignar miembro"
+                    </button>
+                </div>
             </div>
+
+            <Show when=move || error_borrado.get().is_some()>
+                <p class="banner banner-error" style="margin-bottom:14px;">
+                    {move || error_borrado.get().unwrap_or_default()}
+                </p>
+            </Show>
 
             <Show when=move || mostrar_form.get()>
                 <FormularioMiembro

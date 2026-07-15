@@ -24,6 +24,7 @@ pub fn router() -> Router<PgPool> {
             "/workspaces",
             post(handlers::crear_workspace).get(handlers::listar_workspaces),
         )
+        .route("/workspaces/:id", delete(handlers::eliminar_workspace))
         .route(
             "/workspaces/:id/miembros",
             post(handlers::asignar_miembro).get(handlers::listar_miembros),

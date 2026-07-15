@@ -19,6 +19,7 @@ pub mod acciones {
     pub const REFRESH_REUSO: &str = "refresh_reuso";
     pub const USUARIO_CREADO: &str = "usuario_creado";
     pub const WORKSPACE_CREADO: &str = "workspace_creado";
+    pub const WORKSPACE_ELIMINADO: &str = "workspace_eliminado";
     pub const MIEMBRO_ASIGNADO: &str = "miembro_asignado";
     pub const MIEMBRO_ELIMINADO: &str = "miembro_eliminado";
     pub const INVITACION_CREADA: &str = "invitacion_creada";
