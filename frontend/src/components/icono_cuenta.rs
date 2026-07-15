@@ -1,5 +1,5 @@
-//! Ícono según el tipo de cuenta (`cash`/`debit`/`credit`/`savings`/
-//! `investment` — mismos valores que `accounts::Cuenta.tipo`). Antes
+//! Ícono según el tipo de cuenta (`cash`/`debit`/`credit`/`savings` —
+//! mismos valores que `accounts::Cuenta.tipo`). Antes
 //! las cuentas solo se distinguían por texto (`etiqueta_tipo`); en
 //! tarjetas (uso típico en móvil) un ícono se reconoce más rápido que
 //! leer la palabra completa.
@@ -28,14 +28,6 @@ fn trazo(tipo: &str) -> AnyView {
             <path d="M4 13a6.5 6.5 0 0 1 6.5-6.5H15a5 5 0 0 1 5 5v.5a5 5 0 0 1-5 5H10a6 6 0 0 1-6-5.5Z"></path>
             <path d="M10.5 9.5h2.2M7 18v1.6M15 18v1.6"></path>
             <circle cx="16.2" cy="11.5" r="0.8"></circle>
-        }
-        .into_any(),
-        "investment" => view! {
-            // Tendencia ascendente — mismo trazo que el ícono de
-            // "Inversiones" en el rail de navegación (shell.rs), para
-            // que la asociación visual sea consistente en toda la app.
-            <path d="M4 16l5-5 4 4 7-8"></path>
-            <path d="M15 7h5v5"></path>
         }
         .into_any(),
         // "debit" y cualquier tipo no reconocido caen en la tarjeta

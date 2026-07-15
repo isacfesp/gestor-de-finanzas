@@ -23,6 +23,12 @@ use categorias_tab::PestanaCategorias;
 use cuentas_tab::PestanaCuentas;
 use transacciones_tab::PestanaTransacciones;
 
+// Reexportados para la creación rápida de categoría/cuenta dentro de
+// los formularios de operación de otros módulos (Agenda) sin salir de
+// pantalla — ver `agenda::previstos_tab`/`agenda::suscripciones_tab`.
+pub(crate) use categorias_tab::FormularioCategoria;
+pub(crate) use cuentas_tab::FormularioCuenta;
+
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Pestana {
     Cuentas,

@@ -65,7 +65,7 @@ pub fn PestanaCuentas(workspace_id: Uuid) -> impl IntoView {
                     <FormularioCuenta
                         workspace_id=workspace_id
                         cuenta_existente=None
-                        on_guardado=move || { modo.set(ModoFormulario::Cerrado); cuentas.refetch(); }
+                        on_guardado=move |_| { modo.set(ModoFormulario::Cerrado); cuentas.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
                     />
                 }
@@ -74,7 +74,7 @@ pub fn PestanaCuentas(workspace_id: Uuid) -> impl IntoView {
                     <FormularioCuenta
                         workspace_id=workspace_id
                         cuenta_existente=Some(cuenta)
-                        on_guardado=move || { modo.set(ModoFormulario::Cerrado); cuentas.refetch(); }
+                        on_guardado=move |_| { modo.set(ModoFormulario::Cerrado); cuentas.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
                     />
                 }
@@ -230,20 +230,23 @@ fn etiqueta_tipo(tipo: &str) -> &'static str {
         "debit" => "Débito",
         "credit" => "Crédito",
         "savings" => "Ahorro",
-        "investment" => "Inversión",
         _ => "Otro",
     }
 }
 
 #[component]
-fn FormularioCuenta<F1, F2>(
+/// `on_guardado` recibe la cuenta recién creada (`Some`) o `None` si
+/// fue una edición — así un caller como la creación rápida dentro de
+/// otro formulario puede preseleccionarla sin tener que volver a
+/// pedirla.
+pub(crate) fn FormularioCuenta<F1, F2>(
     workspace_id: Uuid,
     cuenta_existente: Option<accounts::Cuenta>,
     on_guardado: F1,
     on_cancelar: F2,
 ) -> impl IntoView
 where
-    F1: Fn() + 'static + Copy,
+    F1: Fn(Option<accounts::Cuenta>) + 'static + Copy,
     F2: Fn() + 'static,
 {
     let auth = use_auth();
@@ -345,7 +348,7 @@ where
                     &token,
                 )
                 .await
-                .map(|_| ())
+                .map(|_| None)
             } else {
                 accounts::crear_cuenta(
                     workspace_id,
@@ -359,12 +362,12 @@ where
                     &token,
                 )
                 .await
-                .map(|_| ())
+                .map(Some)
             };
 
             guardando.set(false);
             match resultado {
-                Ok(()) => on_guardado(),
+                Ok(cuenta_creada) => on_guardado(cuenta_creada),
                 Err(error_api) => error.set(Some(error_api.to_string())),
             }
         });
@@ -388,7 +391,6 @@ where
                         <option value="debit">"Débito"</option>
                         <option value="credit">"Crédito"</option>
                         <option value="savings">"Ahorro"</option>
-                        <option value="investment">"Inversión"</option>
                     </select>
                 </div>
                 <div class="field">

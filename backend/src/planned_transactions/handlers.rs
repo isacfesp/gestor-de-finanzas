@@ -190,6 +190,19 @@ pub async fn actualizar(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Previsto no encontrado".to_string()))?;
 
+    // La transacción que ya generó este previsto (marcar_pagado) queda
+    // vinculada por planned_transaction_id — se corrige su categoría
+    // también, para que las métricas reflejen el cambio de inmediato.
+    // No se propaga monto/cuenta: cambiar eso implicaría re-ajustar
+    // saldos ya movidos.
+    sqlx::query!(
+        "UPDATE transactions SET category_id = $1 WHERE planned_transaction_id = $2 AND is_active = true",
+        fila.category_id,
+        id
+    )
+    .execute(&pool)
+    .await?;
+
     auditoria::registrar(
         &pool,
         Some(workspace_id),
@@ -263,8 +276,9 @@ pub async fn marcar_pagado(
 
         sqlx::query!(
             r#"INSERT INTO transactions
-                   (workspace_id, type, amount, date, category_id, account_id, description, created_by)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
+                   (workspace_id, type, amount, date, category_id, account_id, description,
+                    created_by, planned_transaction_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
             workspace_id,
             fila.tipo,
             fila.amount,
@@ -272,7 +286,8 @@ pub async fn marcar_pagado(
             fila.category_id,
             account_id,
             fila.description,
-            usuario.id
+            usuario.id,
+            id
         )
         .execute(&mut *tx)
         .await?;

@@ -62,30 +62,45 @@ pub fn AccesosRapidos(workspace_id: Uuid) -> impl IntoView {
         <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-top:16px;">
             <section class="panel">
                 <div class="panel-head"><h3>"Transacciones recientes"</h3></div>
-                {move || match recientes.get() {
-                    None => view! { <p class="text-soft">"Cargando..."</p> }.into_any(),
-                    Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
-                    Some(Ok(lista)) if lista.is_empty() => {
-                        view! { <p class="text-soft">"Sin movimientos todavía."</p> }.into_any()
+                {move || {
+                    let categorias_ok = categorias.get().unwrap_or_default();
+                    match recientes.get() {
+                        None => view! { <p class="text-soft">"Cargando..."</p> }.into_any(),
+                        Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
+                        Some(Ok(lista)) if lista.is_empty() => {
+                            view! { <p class="text-soft">"Sin movimientos todavía."</p> }.into_any()
+                        }
+                        Some(Ok(lista)) => view! {
+                            <div>
+                                {lista
+                                    .into_iter()
+                                    .map(|t| {
+                                        let signo = if t.tipo == "income" { "+" } else { "-" };
+                                        let color = if t.tipo == "income" { "var(--positive)" } else { "var(--negative)" };
+                                        let categoria = nombre_categoria(&categorias_ok, t.category_id);
+                                        let descripcion = t.description.clone().unwrap_or_else(|| "Sin descripción".to_string());
+                                        view! {
+                                            <div style="padding:6px 0; border-bottom:1px solid var(--line); font-size:13px;">
+                                                <div style="display:flex; justify-content:space-between; gap:8px;">
+                                                    <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{descripcion}</span>
+                                                    <span class="num" style=format!("color:{color}; flex:none;")>
+                                                        {format!("{signo}{:.2}", t.amount)}
+                                                    </span>
+                                                </div>
+                                                <div style="display:flex; justify-content:space-between; gap:8px; margin-top:3px;">
+                                                    <span class="text-soft">{categoria} " · " {t.account_name.clone()}</span>
+                                                    <span class="text-faint" style="flex:none;">
+                                                        {t.date.to_string()} " · " {t.created_by_name.clone()}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </div>
+                        }
+                        .into_any(),
                     }
-                    Some(Ok(lista)) => view! {
-                        <div>
-                            {lista
-                                .into_iter()
-                                .map(|t| {
-                                    let signo = if t.tipo == "income" { "+" } else { "-" };
-                                    let color = if t.tipo == "income" { "var(--positive)" } else { "var(--negative)" };
-                                    view! {
-                                        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:13px;">
-                                            <span>{t.date.to_string()}</span>
-                                            <span style=format!("color:{color};")>{format!("{signo}{:.2}", t.amount)}</span>
-                                        </div>
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
-                    }
-                    .into_any(),
                 }}
             </section>
             <section class="panel">

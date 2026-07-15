@@ -17,8 +17,10 @@ use leptos::prelude::*;
 use uuid::Uuid;
 
 use super::util::{confirmar, hoy};
+use super::{FormularioCategoria, FormularioCuenta};
 use crate::api::{accounting, accounts, tags};
 use crate::auth::{token_vigente, use_auth};
+use crate::components::hoja_inferior::HojaInferior;
 use crate::components::icono_cuenta::IconoCuenta;
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
 
@@ -62,8 +64,7 @@ impl Operacion {
         }
     }
 
-    /// Tipos de cuenta seleccionables para esta operación. `investment`
-    /// nunca aparece aquí: le corresponde al módulo Inversiones. Una
+    /// Tipos de cuenta seleccionables para esta operación. Una
     /// tarjeta de crédito no recibe "Ingreso" directo — solo sube de
     /// vuelta cuando se paga (Transferencia hacia ella); por eso
     /// `credit` queda fuera de Ingreso y solo aparece en Gasto (usarla)
@@ -591,6 +592,13 @@ where
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
 
+    // Creación rápida de categoría/cuenta sin salir de este formulario
+    // — abren una `HojaInferior` en vez de obligar a ir a la pestaña
+    // "Categorías y Etiquetas"/"Cuentas". Al crear, se agrega a la
+    // lista local (ya se ve en el <select>) y se preselecciona.
+    let mostrar_categoria_rapida = RwSignal::new(false);
+    let mostrar_cuenta_rapida = RwSignal::new(false);
+
     let etiquetas = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
             return Vec::new();
@@ -818,37 +826,89 @@ where
                 <Show when=move || operacion.get() != Operacion::Transferencia>
                     <div class="field">
                         <label>"Cuenta"</label>
-                        <select prop:value=move || cuenta_id.get() on:change=move |ev| cuenta_id.set(event_target_value(&ev))>
-                            {move || {
-                                cuentas_para(operacion.get(), &cuentas.get())
-                                    .into_iter()
-                                    .map(|c| {
-                                        let id = c.id.to_string();
-                                        view! { <option value=id.clone()>{c.name.clone()}</option> }
-                                    })
-                                    .collect_view()
-                            }}
-                        </select>
+                        <div style="display:flex; gap:6px;">
+                            <select
+                                style="flex:1;"
+                                prop:value=move || cuenta_id.get()
+                                on:change=move |ev| cuenta_id.set(event_target_value(&ev))
+                            >
+                                {move || {
+                                    cuentas_para(operacion.get(), &cuentas.get())
+                                        .into_iter()
+                                        .map(|c| {
+                                            let id = c.id.to_string();
+                                            view! { <option value=id.clone()>{c.name.clone()}</option> }
+                                        })
+                                        .collect_view()
+                                }}
+                            </select>
+                            <button
+                                type="button"
+                                class="btn-ghost"
+                                title="Crear cuenta"
+                                on:click=move |_| mostrar_cuenta_rapida.set(true)
+                            >
+                                "+"
+                            </button>
+                        </div>
                     </div>
                     <div class="field">
                         <label>"Categoría"</label>
-                        <select
-                            prop:value=move || categoria_id.get()
-                            on:change=move |ev| categoria_id.set(event_target_value(&ev))
-                        >
-                            <option value="">"Sin categoría"</option>
-                            {move || {
-                                categorias_de_tipo(&categorias.get(), operacion.get().tipo_backend())
-                                    .into_iter()
-                                    .map(|c| {
-                                        let id = c.id.to_string();
-                                        view! { <option value=id.clone()>{c.name.clone()}</option> }
-                                    })
-                                    .collect_view()
-                            }}
-                        </select>
+                        <div style="display:flex; gap:6px;">
+                            <select
+                                style="flex:1;"
+                                prop:value=move || categoria_id.get()
+                                on:change=move |ev| categoria_id.set(event_target_value(&ev))
+                            >
+                                <option value="">"Sin categoría"</option>
+                                {move || {
+                                    categorias_de_tipo(&categorias.get(), operacion.get().tipo_backend())
+                                        .into_iter()
+                                        .map(|c| {
+                                            let id = c.id.to_string();
+                                            view! { <option value=id.clone()>{c.name.clone()}</option> }
+                                        })
+                                        .collect_view()
+                                }}
+                            </select>
+                            <button
+                                type="button"
+                                class="btn-ghost"
+                                title="Crear categoría"
+                                on:click=move |_| mostrar_categoria_rapida.set(true)
+                            >
+                                "+"
+                            </button>
+                        </div>
                     </div>
                 </Show>
+
+                <HojaInferior abierto=mostrar_categoria_rapida>
+                    <FormularioCategoria
+                        workspace_id=workspace_id
+                        tipo_inicial=operacion.get_untracked().tipo_backend()
+                        on_creada=move |creada| {
+                            categoria_id.set(creada.id.to_string());
+                            categorias.update(|lista| lista.push(creada));
+                            mostrar_categoria_rapida.set(false);
+                        }
+                        on_cancelar=move || mostrar_categoria_rapida.set(false)
+                    />
+                </HojaInferior>
+                <HojaInferior abierto=mostrar_cuenta_rapida>
+                    <FormularioCuenta
+                        workspace_id=workspace_id
+                        cuenta_existente=None
+                        on_guardado=move |creada| {
+                            if let Some(creada) = creada {
+                                cuenta_id.set(creada.id.to_string());
+                                cuentas.update(|lista| lista.push(creada));
+                            }
+                            mostrar_cuenta_rapida.set(false);
+                        }
+                        on_cancelar=move || mostrar_cuenta_rapida.set(false)
+                    />
+                </HojaInferior>
 
                 <div class="field">
                     <label>{move || if operacion.get() == Operacion::Transferencia { "Nota (opcional)" } else { "Descripción" }}</label>

@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use uuid::Uuid;
 
 use super::util::confirmar;
-use crate::api::admin::{self, MiembroWorkspace, Workspace};
+use crate::api::admin::{self, MiembroWorkspace, UsuarioAdmin, Workspace};
 use crate::auth::{token_vigente, use_auth};
 
 #[derive(Clone)]
@@ -235,6 +235,15 @@ where
             <Show when=move || mostrar_form.get()>
                 <FormularioMiembro
                     workspace_id=workspace_id
+                    excluir_ids={
+                        miembros
+                            .get()
+                            .and_then(|r| r.ok())
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|m| m.user_id)
+                            .collect::<Vec<_>>()
+                    }
                     on_guardado=move || { mostrar_form.set(false); miembros.refetch(); }
                     on_cancelar=move || mostrar_form.set(false)
                 />
@@ -293,7 +302,15 @@ where
 }
 
 #[component]
-fn FormularioMiembro<F1, F2>(workspace_id: Uuid, on_guardado: F1, on_cancelar: F2) -> impl IntoView
+fn FormularioMiembro<F1, F2>(
+    workspace_id: Uuid,
+    /// Usuarios que ya son miembros de este tenant — se excluyen de las
+    /// sugerencias del `<datalist>` para no ofrecer reasignar a alguien
+    /// que ya está adentro.
+    excluir_ids: Vec<Uuid>,
+    on_guardado: F1,
+    on_cancelar: F2,
+) -> impl IntoView
 where
     F1: Fn() + 'static + Copy,
     F2: Fn() + 'static,
@@ -303,6 +320,24 @@ where
     let rol = RwSignal::new("member".to_string());
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
+
+    // Alimenta el `<datalist>` del campo de email: usuarios activos que
+    // todavía no pertenecen a este tenant, para poder elegirlos por
+    // nombre en vez de tener que teclear el email exacto de memoria.
+    let usuarios = LocalResource::new(move || {
+        let excluidos = excluir_ids.clone();
+        async move {
+            let Some(token) = token_vigente(auth).await else {
+                return Vec::<UsuarioAdmin>::new();
+            };
+            admin::listar_usuarios(&token)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|u| u.is_active && !excluidos.contains(&u.id))
+                .collect()
+        }
+    });
 
     let guardar = move |ev: SubmitEvent| {
         ev.prevent_default();
@@ -343,10 +378,21 @@ where
                     <label>"Email del usuario"</label>
                     <input
                         r#type="email"
+                        list="usuarios-existentes"
                         prop:value=move || email.get()
                         on:input=move |ev| email.set(event_target_value(&ev))
                         required
                     />
+                    <datalist id="usuarios-existentes">
+                        {move || {
+                            usuarios
+                                .get()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|u| view! { <option value=u.email.clone() label=u.name.clone()></option> })
+                                .collect_view()
+                        }}
+                    </datalist>
                 </div>
                 <div class="field">
                     <label>"Rol en el workspace"</label>

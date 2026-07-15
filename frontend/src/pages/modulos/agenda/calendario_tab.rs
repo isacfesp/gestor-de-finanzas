@@ -6,7 +6,7 @@
 //! viviendo en la pestaña de ese dominio; aquí solo se listan y, al
 //! tocar un día, se resumen en una hoja inferior.
 
-use chrono::{Datelike, Days, Duration, NaiveDate};
+use chrono::{Datelike, Days, Duration, Months, NaiveDate};
 use leptos::prelude::*;
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -76,6 +76,49 @@ fn mes_siguiente(mes: NaiveDate) -> NaiveDate {
     ultimo_dia_del_mes(mes) + Duration::days(1)
 }
 
+/// Meses que dura un período de cobro — replica
+/// `meses_por_periodicidad` del backend
+/// (`backend/src/accounting/suscripciones.rs`) porque acá hace falta
+/// proyectar ocurrencias pasadas/futuras sin pedirle nada al servidor
+/// (la API solo guarda la próxima fecha, no una regla de recurrencia).
+fn meses_por_periodicidad(periodicity: &str) -> u32 {
+    match periodicity {
+        "bimonthly" => 2,
+        "quarterly" => 3,
+        "annual" => 12,
+        // "monthly" y cualquier valor inesperado: tratar como mensual
+        // en vez de ocultar el evento del calendario.
+        _ => 1,
+    }
+}
+
+/// Si la suscripción cuya próxima fecha guardada es `next_billing_date`
+/// (con esta `periodicity`) cobra alguna vez dentro de `mes_visible`,
+/// devuelve ese día — sea en un mes futuro o uno ya pasado (se asume
+/// que cobró siempre el mismo día, hacia atrás y hacia adelante).
+/// `None` si ese mes no le toca (p. ej. una trimestral no cobra todos
+/// los meses) o si el día de cobro no existe en el mes resultante
+/// (31 de enero → 31 de febrero no existe).
+fn ocurrencia_en_mes(
+    next_billing_date: NaiveDate,
+    periodicity: &str,
+    mes_visible: NaiveDate,
+) -> Option<NaiveDate> {
+    let meses = meses_por_periodicidad(periodicity) as i32;
+    let indice_visible = mes_visible.year() * 12 + mes_visible.month() as i32;
+    let indice_base = next_billing_date.year() * 12 + next_billing_date.month() as i32;
+    let diferencia = indice_visible - indice_base;
+    if diferencia % meses != 0 {
+        return None;
+    }
+    let pasos = diferencia / meses;
+    if pasos >= 0 {
+        next_billing_date.checked_add_months(Months::new(pasos as u32))
+    } else {
+        next_billing_date.checked_sub_months(Months::new((-pasos) as u32))
+    }
+}
+
 const MESES: [&str; 12] = [
     "enero",
     "febrero",
@@ -114,10 +157,10 @@ pub fn PestanaCalendario(workspace_id: Uuid) -> impl IntoView {
             .unwrap_or_default()
     });
 
-    // Sin filtro de fecha en la API (`next_billing_date` es la próxima
-    // ocurrencia, no una regla de recurrencia) — se pide una vez y se
-    // filtra por mes en el cliente; si el próximo cobro cae fuera del
-    // mes que se está viendo, simplemente no aparece.
+    // Sin filtro de fecha en la API (`next_billing_date` es solo la
+    // próxima ocurrencia, no una regla de recurrencia) — se pide una
+    // vez y `ocurrencia_en_mes` proyecta, en el cliente, el día que le
+    // toca cobrar en el mes que se esté viendo (pasado o futuro).
     let suscripciones = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
             return Vec::new();
@@ -154,15 +197,16 @@ pub fn PestanaCalendario(workspace_id: Uuid) -> impl IntoView {
             }
         }
         if let Some(lista) = suscripciones.get() {
-            for s in lista
-                .iter()
-                .filter(|s| s.is_active && s.next_billing_date == dia)
-            {
-                eventos.push(EventoDia {
-                    etiqueta: s.name.clone(),
-                    monto: Some(s.amount),
-                    tipo: TipoEvento::Suscripcion,
-                });
+            let mes_visible = primer_dia_del_mes(mes.get());
+            for s in lista.iter().filter(|s| s.is_active) {
+                if ocurrencia_en_mes(s.next_billing_date, &s.periodicity, mes_visible) == Some(dia)
+                {
+                    eventos.push(EventoDia {
+                        etiqueta: s.name.clone(),
+                        monto: Some(s.amount),
+                        tipo: TipoEvento::Suscripcion,
+                    });
+                }
             }
         }
         if let Some(lista) = metas.get() {

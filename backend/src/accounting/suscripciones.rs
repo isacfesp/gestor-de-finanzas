@@ -253,6 +253,19 @@ pub async fn actualizar(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
 
+    // Las transacciones que ya generó esta suscripción (marcar_cobrada)
+    // quedan vinculadas por subscription_id — se corrige su categoría
+    // también, para que las métricas reflejen el cambio de inmediato.
+    // No se propaga monto/cuenta: cambiar eso implicaría re-ajustar
+    // saldos ya movidos.
+    sqlx::query!(
+        "UPDATE transactions SET category_id = $1 WHERE subscription_id = $2 AND is_active = true",
+        fila.category_id,
+        id
+    )
+    .execute(&pool)
+    .await?;
+
     auditoria::registrar(
         &pool,
         Some(workspace_id),
@@ -331,15 +344,17 @@ pub async fn marcar_cobrada(
 
         sqlx::query!(
             r#"INSERT INTO transactions
-                   (workspace_id, type, amount, date, category_id, account_id, description, created_by)
-               VALUES ($1, 'expense', $2, $3, $4, $5, $6, $7)"#,
+                   (workspace_id, type, amount, date, category_id, account_id, description,
+                    created_by, subscription_id)
+               VALUES ($1, 'expense', $2, $3, $4, $5, $6, $7, $8)"#,
             workspace_id,
             actual.amount,
             actual.next_billing_date,
             actual.category_id,
             account_id,
             actual.name,
-            usuario.id
+            usuario.id,
+            id
         )
         .execute(&mut *tx)
         .await?;

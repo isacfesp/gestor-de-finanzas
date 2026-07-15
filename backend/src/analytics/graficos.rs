@@ -1,90 +1,31 @@
 // =====================================================================
-// graficos.rs — Gráfica de tendencia (línea) y de flujo de dinero
-// (pastel), renderizadas en el servidor con `charts-rs` y devueltas
-// como SVG de texto — el frontend lo inyecta con `inner_html`, sin
-// pasar por <img>/canvas/WASM.
-//
-// `tema` (claro/oscuro) elige la paleta en el momento de generar el
-// SVG: un SVG ya armado no puede reaccionar a un cambio de tema hecho
-// después en el navegador, así que el frontend vuelve a pedir el
-// gráfico cuando el usuario alterna el tema (ver `theme.rs`).
+// graficos.rs — Datos de la gráfica de tendencia (línea) y de flujo de
+// dinero por categoría (pastel). Antes esto se renderizaba en el
+// servidor con `charts-rs` y se devolvía un SVG de texto; ahora se
+// devuelven los números y el frontend dibuja e interactúa con la
+// gráfica él mismo (hover/tap para ver el monto exacto, soporte de
+// saldo negativo) — un SVG ya armado no puede reaccionar a eventos de
+// puntero ni recolorearse solo, así que había que elegir entre eso o
+// reescribir el SVG en el servidor por cada frame de interacción.
 // =====================================================================
 
 use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use charts_rs::{Color, LineChart, PieChart, Series};
 use chrono::{Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::analytics::comun::resolver_filtro_usuario;
-use crate::analytics::models::{FiltroFlujoPastel, FiltroTendencia, GraficoSvg};
+use crate::analytics::models::{
+    DatosFlujoPastel, DatosTendencia, FiltroFlujoPastel, FiltroTendencia, PuntoTendencia,
+    RebanadaPastel,
+};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
-
-/// Paleta categórica fija (skill dataviz, `references/palette.md`) —
-/// mismos valores hex que `--series-1..8` en
-/// `frontend/styles/tailwind.css`. Duplicada aquí porque el SVG se
-/// genera en el backend, que no puede leer variables CSS del cliente.
-/// Orden fijo, nunca ciclada; una 9ª categoría se pliega en "Otros"
-/// (ver `categoria_color`).
-const SERIES_OSCURO: [&str; 8] = [
-    "#3987e5", "#199e70", "#c98500", "#008300", "#9085e9", "#e66767", "#d55181", "#d95926",
-];
-const SERIES_CLARO: [&str; 8] = [
-    "#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834",
-];
-const OTROS_OSCURO: &str = "#5b6b8c";
-const OTROS_CLARO: &str = "#94a3b8";
-
-struct Paleta {
-    series: [&'static str; 8],
-    otros: &'static str,
-    positivo: &'static str,
-    negativo: &'static str,
-    texto: &'static str,
-    linea: &'static str,
-}
-
-fn paleta(tema: Option<&str>) -> Paleta {
-    match tema {
-        Some("light") => Paleta {
-            series: SERIES_CLARO,
-            otros: OTROS_CLARO,
-            positivo: "#16a34a",
-            negativo: "#e11d48",
-            texto: "#0c1b3a",
-            linea: "#dbe3f0",
-        },
-        _ => Paleta {
-            series: SERIES_OSCURO,
-            otros: OTROS_OSCURO,
-            positivo: "#34d399",
-            negativo: "#fb7185",
-            texto: "#eaf0ff",
-            linea: "#243057",
-        },
-    }
-}
-
-/// La 9ª categoría en adelante (ordenadas por monto descendente, ya
-/// como las devuelve la consulta) cae en "Otros" — mismo criterio que
-/// la barra apilada de `distribucion.rs` en el frontend.
-fn categoria_color(paleta: &Paleta, indice: usize) -> Color {
-    match paleta.series.get(indice) {
-        Some(hex) => Color::from(*hex),
-        None => Color::from(paleta.otros),
-    }
-}
-
-fn decimal_a_f32(valor: Decimal) -> f32 {
-    valor.to_f64().unwrap_or(0.0) as f32
-}
 
 fn primer_dia_del_mes(fecha: NaiveDate) -> NaiveDate {
     fecha
@@ -206,11 +147,11 @@ fn rango_y_grilla(v: Vista, hoy: NaiveDate) -> (NaiveDate, NaiveDate, Vec<NaiveD
     }
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/tendencia?tema=&granularidad=
+/// GET /workspaces/:workspace_id/analytics/charts/tendencia?granularidad=
 ///
-/// Ingresos/egresos según la vista elegida (`granularidad`): "semana"
-/// muestra la semana en curso día por día, "mes" el mes en curso
-/// semana por semana, y "año" (por defecto "mes") los últimos 12
+/// Ingresos/egresos/saldo neto según la vista elegida (`granularidad`):
+/// "semana" muestra la semana en curso día por día, "mes" el mes en
+/// curso semana por semana, y "año" (por defecto "mes") los últimos 12
 /// meses, mes por mes — no existe un endpoint de serie temporal
 /// reutilizable (`flujo_caja` en `metricas.rs` solo agrega un rango a
 /// un único total), así que esta consulta agrupa aparte.
@@ -219,7 +160,7 @@ pub async fn tendencia(
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtro): Query<FiltroTendencia>,
-) -> Result<Json<GraficoSvg>, AppError> {
+) -> Result<Json<DatosTendencia>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
     let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
@@ -247,73 +188,58 @@ pub async fn tendencia(
 
     // Rejilla completa de puntos: aunque uno no tenga movimientos, el
     // eje X debe mostrarlo en 0, no saltárselo (si no, el eje pierde
-    // la escala temporal uniforme y las barras/puntos "se acercan").
-    let monto_de = |periodo: NaiveDate, elegir: fn(&Decimal, &Decimal) -> Decimal| {
-        filas
-            .iter()
-            .find(|f| f.periodo == periodo)
-            .map(|f| decimal_a_f32(elegir(&f.income, &f.expense)))
-            .unwrap_or(0.0)
-    };
-    let ingresos: Vec<f32> = grilla.iter().map(|m| monto_de(*m, |i, _| *i)).collect();
-    let egresos: Vec<f32> = grilla.iter().map(|m| monto_de(*m, |_, e| *e)).collect();
-    let etiquetas: Vec<String> = grilla.iter().map(|m| etiqueta_punto(*m, vista)).collect();
+    // la escala temporal uniforme y los puntos "se acercan").
+    let fila_de = |periodo: NaiveDate| filas.iter().find(|f| f.periodo == periodo);
 
-    // Sin esto, cuando no hay movimientos en todo el rango (workspace
-    // nuevo/de prueba) `charts-rs` calcula el eje Y como min == max ==
-    // 0.0 y termina dividiendo 0.0/0.0 = NaN para cada punto — mismo
-    // criterio de "cortar antes de dividir" que ya usa
-    // `metricas::tasa_ahorro` para `total_income == 0`.
-    if ingresos.iter().chain(egresos.iter()).all(|v| *v == 0.0) {
-        return Ok(Json(GraficoSvg { svg: String::new() }));
-    }
+    let puntos: Vec<PuntoTendencia> = grilla
+        .iter()
+        .map(|periodo| {
+            let (income, expense) = fila_de(*periodo)
+                .map(|f| (f.income, f.expense))
+                .unwrap_or((Decimal::ZERO, Decimal::ZERO));
+            PuntoTendencia {
+                etiqueta: etiqueta_punto(*periodo, vista),
+                income,
+                expense,
+                net: income - expense,
+            }
+        })
+        .collect();
 
-    let paleta = paleta(filtro.tema.as_deref());
-    let mut grafico = LineChart::new(
-        vec![
-            Series::new("Ingresos".to_string(), ingresos),
-            Series::new("Egresos".to_string(), egresos),
-        ],
-        etiquetas,
-    );
-    grafico.width = 600.0;
-    grafico.height = 280.0;
-    grafico.background_color = Color::transparent();
-    grafico.font_family = "Plus Jakarta Sans".to_string();
-    grafico.series_colors = vec![Color::from(paleta.positivo), Color::from(paleta.negativo)];
-    grafico.series_smooth = true;
-    grafico.legend_font_color = Color::from(paleta.texto);
-    grafico.x_axis_font_color = Color::from(paleta.texto);
-    grafico.x_axis_stroke_color = Color::from(paleta.linea);
-    grafico.grid_stroke_color = Color::from(paleta.linea);
-
-    let svg = grafico
-        .svg()
-        .map_err(|e| AppError::Interno(format!("charts-rs (tendencia): {e}")))?;
-
-    Ok(Json(GraficoSvg { svg }))
+    Ok(Json(DatosTendencia { puntos }))
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&tema=
+/// % que representa `monto` sobre `total` — `0` si `total` es cero en
+/// vez de dividir (evita el panic de `rust_decimal` al dividir por
+/// cero cuando un tipo no tiene movimientos en el rango).
+fn porcentaje(monto: Decimal, total: Decimal) -> Decimal {
+    if total.is_zero() {
+        Decimal::ZERO
+    } else {
+        (monto / total) * Decimal::from(100)
+    }
+}
+
+/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=
 ///
-/// Ingresos Y gastos por categoría en el rango pedido, en un solo
-/// pastel — cada rebanada es una categoría de un tipo (`"Ingreso ·
-/// Sueldo"`, `"Gasto · Comida"`), con el porcentaje calculado sobre el
-/// total combinado (`PieChart` reparte proporciones sobre la suma de
-/// todas las series que recibe). Se agrupa por `(type, category_name)`
-/// y no solo por `category_name` para no mezclar el bucket "Sin
-/// categoría" de ingreso con el de gasto.
+/// Ingresos y gastos por categoría en el rango pedido, como dos listas
+/// separadas — antes era un solo pastel mezclando ambos tipos, con el
+/// porcentaje de cada rebanada calculado sobre el total combinado
+/// (ingreso + gasto), así que ninguna de las dos mitades sumaba 100%
+/// por separado. Cada lista de acá trae su `percentage` relativo solo
+/// a su propio total.
 pub async fn flujo_pastel(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtro): Query<FiltroFlujoPastel>,
-) -> Result<Json<GraficoSvg>, AppError> {
+) -> Result<Json<DatosFlujoPastel>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
     let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
     let filas = sqlx::query!(
-        r#"SELECT t.type AS "tipo!", COALESCE(c.name, 'Sin categoría') AS "category_name!",
+        r#"SELECT t.type AS "tipo!", c.id AS "category_id?",
+                  COALESCE(c.name, 'Sin categoría') AS "category_name!",
                   SUM(t.amount) AS "amount!"
            FROM transactions t
            LEFT JOIN categories c ON c.id = t.category_id
@@ -321,8 +247,8 @@ pub async fn flujo_pastel(
              AND ($2::date IS NULL OR t.date >= $2)
              AND ($3::date IS NULL OR t.date <= $3)
              AND ($4::uuid IS NULL OR t.created_by = $4)
-           GROUP BY t.type, c.name
-           ORDER BY 3 DESC"#,
+           GROUP BY t.type, c.id, c.name
+           ORDER BY 4 DESC"#,
         workspace_id,
         filtro.desde,
         filtro.hasta,
@@ -331,50 +257,31 @@ pub async fn flujo_pastel(
     .fetch_all(&pool)
     .await?;
 
-    // `PieChart` con lista vacía ya degrada bien hoy (no dibuja
-    // ninguna rebanada), pero no depender de ese detalle no
-    // documentado de una dependencia externa — cortar acá es más
-    // robusto y barato.
-    if filas.is_empty() {
-        return Ok(Json(GraficoSvg { svg: String::new() }));
-    }
+    let total_de = |tipo: &str| -> Decimal {
+        filas
+            .iter()
+            .filter(|f| f.tipo == tipo)
+            .map(|f| f.amount)
+            .sum()
+    };
+    let total_ingresos = total_de("income");
+    let total_gastos = total_de("expense");
 
-    let paleta = paleta(filtro.tema.as_deref());
-    let series_list: Vec<Series> = filas
-        .iter()
-        .map(|f| {
-            let prefijo = if f.tipo == "income" {
-                "Ingreso"
-            } else {
-                "Gasto"
-            };
-            Series::new(
-                format!("{prefijo} · {}", f.category_name),
-                vec![decimal_a_f32(f.amount)],
-            )
-        })
-        .collect();
-    let colores: Vec<Color> = (0..series_list.len())
-        .map(|i| categoria_color(&paleta, i))
-        .collect();
+    let rebanadas_de = |tipo: &str, total: Decimal| -> Vec<RebanadaPastel> {
+        filas
+            .iter()
+            .filter(|f| f.tipo == tipo)
+            .map(|f| RebanadaPastel {
+                category_id: f.category_id,
+                category_name: f.category_name.clone(),
+                amount: f.amount,
+                percentage: porcentaje(f.amount, total),
+            })
+            .collect()
+    };
 
-    let mut grafico = PieChart::new(series_list);
-    grafico.width = 320.0;
-    grafico.height = 320.0;
-    grafico.background_color = Color::transparent();
-    grafico.font_family = "Plus Jakarta Sans".to_string();
-    grafico.series_colors = colores;
-    // "Pastel" pedido explícitamente, no dona ni rosa (nightingale) —
-    // son los defaults de `PieChart::new`, hay que apagarlos a mano.
-    grafico.inner_radius = 0.0;
-    grafico.rose_type = Some(false);
-    grafico.legend_show = Some(true);
-    grafico.legend_font_color = Color::from(paleta.texto);
-    grafico.title_font_color = Color::from(paleta.texto);
-
-    let svg = grafico
-        .svg()
-        .map_err(|e| AppError::Interno(format!("charts-rs (flujo-pastel): {e}")))?;
-
-    Ok(Json(GraficoSvg { svg }))
+    Ok(Json(DatosFlujoPastel {
+        ingresos: rebanadas_de("income", total_ingresos),
+        gastos: rebanadas_de("expense", total_gastos),
+    }))
 }

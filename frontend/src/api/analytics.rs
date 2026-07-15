@@ -12,12 +12,36 @@ use uuid::Uuid;
 use super::client;
 use super::error::ApiError;
 
-/// SVG ya armado por el backend (`charts-rs`, ver
-/// `backend/src/analytics/graficos.rs`) — se inyecta directo en el DOM
-/// con el atributo `inner_html` de Leptos, sin pasar por `<img>`.
+/// Un punto de la gráfica de tendencia — `net` (ingresos − egresos del
+/// período) puede ser negativo: significa que ese período se cayó en
+/// deuda.
 #[derive(Debug, Clone, Deserialize)]
-struct GraficoSvg {
-    svg: String,
+pub struct PuntoTendencia {
+    pub etiqueta: String,
+    pub income: Decimal,
+    pub expense: Decimal,
+    pub net: Decimal,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatosTendencia {
+    pub puntos: Vec<PuntoTendencia>,
+}
+
+/// Una rebanada del pastel de ingresos o de gastos — `percentage` ya
+/// viene calculado relativo al total de su propio tipo (ver
+/// `backend/src/analytics/graficos.rs::flujo_pastel`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct RebanadaPastel {
+    pub category_name: String,
+    pub amount: Decimal,
+    pub percentage: Decimal,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatosFlujoPastel {
+    pub ingresos: Vec<RebanadaPastel>,
+    pub gastos: Vec<RebanadaPastel>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -96,44 +120,39 @@ pub async fn ahorro_neto(
     client::get(&ruta, token).await
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/tendencia?tema=&user_id=&granularidad=
+/// GET /workspaces/:workspace_id/analytics/charts/tendencia?user_id=&granularidad=
 ///
-/// `tema` es "dark"/"light" (`theme::Tema::como_texto()`) — el SVG se
-/// arma con esa paleta en el servidor, así que hay que volver a
-/// pedirlo si el usuario alterna el tema. `granularidad` fija tanto el
-/// rango como la agrupación: "semana" (semana en curso, día por día),
-/// "mes" (mes en curso, semana por semana, por defecto si se omite) o
-/// "año" (últimos 12 meses, mes por mes).
-pub async fn tendencia_svg(
+/// `granularidad` fija tanto el rango como la agrupación: "semana"
+/// (semana en curso, día por día), "mes" (mes en curso, semana por
+/// semana, por defecto si se omite) o "año" (últimos 12 meses, mes por
+/// mes).
+pub async fn tendencia(
     workspace_id: Uuid,
-    tema: &str,
     user_id: Option<Uuid>,
     granularidad: &str,
     token: &str,
-) -> Result<String, ApiError> {
+) -> Result<DatosTendencia, ApiError> {
     let mut ruta = format!(
-        "/workspaces/{workspace_id}/analytics/charts/tendencia?tema={tema}&granularidad={granularidad}"
+        "/workspaces/{workspace_id}/analytics/charts/tendencia?granularidad={granularidad}"
     );
     agregar_param(&mut ruta, "user_id", user_id);
-    client::get::<GraficoSvg>(&ruta, token).await.map(|g| g.svg)
+    client::get(&ruta, token).await
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&tema=&user_id=
-pub async fn flujo_pastel_svg(
+/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&user_id=
+pub async fn flujo_pastel(
     workspace_id: Uuid,
     desde: Option<NaiveDate>,
     hasta: Option<NaiveDate>,
-    tema: &str,
     user_id: Option<Uuid>,
     token: &str,
-) -> Result<String, ApiError> {
-    let base = query_periodo(desde, hasta);
-    let separador = if base.is_empty() { '?' } else { '&' };
+) -> Result<DatosFlujoPastel, ApiError> {
     let mut ruta = format!(
-        "/workspaces/{workspace_id}/analytics/charts/flujo-pastel{base}{separador}tema={tema}"
+        "/workspaces/{workspace_id}/analytics/charts/flujo-pastel{}",
+        query_periodo(desde, hasta)
     );
     agregar_param(&mut ruta, "user_id", user_id);
-    client::get::<GraficoSvg>(&ruta, token).await.map(|g| g.svg)
+    client::get(&ruta, token).await
 }
 
 fn query_periodo(desde: Option<NaiveDate>, hasta: Option<NaiveDate>) -> String {

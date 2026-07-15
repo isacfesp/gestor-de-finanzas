@@ -268,3 +268,100 @@ fn SeccionEtiquetas(workspace_id: Uuid) -> impl IntoView {
         </section>
     }
 }
+
+/// Formulario mínimo de alta de categoría, reutilizable fuera de esta
+/// pestaña (dentro de una `HojaInferior`, ver `cuentas::transacciones_tab`
+/// y `agenda::{previstos_tab, suscripciones_tab}`) para crearla sin
+/// abandonar el formulario de la operación. `on_creada` recibe la
+/// categoría recién creada para que el caller la preseleccione —
+/// mismo patrón que `cuentas_tab::FormularioCuenta`.
+#[component]
+pub(crate) fn FormularioCategoria<F1, F2>(
+    workspace_id: Uuid,
+    /// Tipo con el que arranca el `<select>` — la operación que abre
+    /// este formulario ya sabe si necesita una categoría de ingreso o
+    /// de gasto.
+    #[prop(default = "expense".to_string(), into)]
+    tipo_inicial: String,
+    on_creada: F1,
+    on_cancelar: F2,
+) -> impl IntoView
+where
+    F1: Fn(accounting::Categoria) + 'static + Copy,
+    F2: Fn() + 'static,
+{
+    let auth = use_auth();
+    let nombre = RwSignal::new(String::new());
+    let tipo = RwSignal::new(tipo_inicial);
+    let error = RwSignal::new(None::<String>);
+    let guardando = RwSignal::new(false);
+
+    let guardar = move |ev: leptos::ev::SubmitEvent| {
+        ev.prevent_default();
+        error.set(None);
+
+        if nombre.get_untracked().trim().is_empty() {
+            error.set(Some("El nombre no puede estar vacío".to_string()));
+            return;
+        }
+
+        guardando.set(true);
+        let nombre_actual = nombre.get_untracked();
+        let tipo_actual = tipo.get_untracked();
+        leptos::task::spawn_local(async move {
+            let Some(token) = token_vigente(auth).await else {
+                error.set(Some("Sesión vencida".to_string()));
+                guardando.set(false);
+                return;
+            };
+
+            let datos = accounting::CrearCategoriaDatos {
+                name: nombre_actual.trim(),
+                tipo: &tipo_actual,
+            };
+            let resultado = accounting::crear_categoria(workspace_id, &datos, &token).await;
+            guardando.set(false);
+            match resultado {
+                Ok(categoria) => on_creada(categoria),
+                Err(error_api) => error.set(Some(error_api.to_string())),
+            }
+        });
+    };
+
+    view! {
+        <form class="panel form-panel" on:submit=guardar>
+            <div class="form-grid">
+                <div class="field">
+                    <label>"Nombre"</label>
+                    <input
+                        prop:value=move || nombre.get()
+                        on:input=move |ev| nombre.set(event_target_value(&ev))
+                        required
+                    />
+                </div>
+                <div class="field">
+                    <label>"Tipo"</label>
+                    <select prop:value=move || tipo.get() on:change=move |ev| tipo.set(event_target_value(&ev))>
+                        <option value="expense">"Gasto"</option>
+                        <option value="income">"Ingreso"</option>
+                    </select>
+                </div>
+            </div>
+
+            <Show when=move || error.get().is_some()>
+                <p class="banner banner-error" style="margin-bottom:14px;">
+                    {move || error.get().unwrap_or_default()}
+                </p>
+            </Show>
+
+            <div class="form-actions">
+                <button type="button" class="btn-ghost" on:click=move |_| on_cancelar()>
+                    "Cancelar"
+                </button>
+                <button type="submit" class="btn btn-primary" disabled=move || guardando.get()>
+                    {move || if guardando.get() { "Creando..." } else { "Crear categoría" }}
+                </button>
+            </div>
+        </form>
+    }
+}

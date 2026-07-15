@@ -71,13 +71,8 @@ pub struct DistribucionGasto {
     pub percentage: Decimal,
 }
 
-/// `tema` selecciona la paleta claro/oscuro en el momento de generar el
-/// SVG (ver `graficos.rs`) — el servidor no puede reaccionar a un
-/// cambio de tema hecho después en el cliente, así que el frontend
-/// vuelve a pedir el gráfico cuando el usuario alterna el tema.
 #[derive(Debug, Deserialize)]
 pub struct FiltroTendencia {
-    pub tema: Option<String>,
     pub user_id: Option<Uuid>,
     /// "semana" (la semana en curso, día por día) | "mes" (el mes en
     /// curso, semana por semana) | "año" (últimos 12 meses, mes por
@@ -90,13 +85,40 @@ pub struct FiltroTendencia {
 pub struct FiltroFlujoPastel {
     pub desde: Option<NaiveDate>,
     pub hasta: Option<NaiveDate>,
-    pub tema: Option<String>,
     pub user_id: Option<Uuid>,
 }
 
-/// SVG ya armado, como texto — el frontend lo inyecta directo con
-/// `inner_html`, sin pasar por `<img>`/Blob.
+/// Un punto de la gráfica de tendencia. `net` (ingresos − egresos del
+/// período) puede ser negativo — significa que ese período se gastó
+/// más de lo que entró, es decir, se cayó en deuda.
 #[derive(Debug, Serialize)]
-pub struct GraficoSvg {
-    pub svg: String,
+pub struct PuntoTendencia {
+    pub etiqueta: String,
+    pub income: Decimal,
+    pub expense: Decimal,
+    pub net: Decimal,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DatosTendencia {
+    pub puntos: Vec<PuntoTendencia>,
+}
+
+/// Una rebanada del pastel de una categoría. `percentage` es relativo
+/// al total de su propio tipo (todos los ingresos o todos los gastos
+/// del período, cada uno por separado) — así las rebanadas de cada
+/// pastel suman 100%, en vez de repartirse sobre el combinado de
+/// ambos tipos como pasaba antes.
+#[derive(Debug, Serialize)]
+pub struct RebanadaPastel {
+    pub category_id: Option<Uuid>,
+    pub category_name: String,
+    pub amount: Decimal,
+    pub percentage: Decimal,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DatosFlujoPastel {
+    pub ingresos: Vec<RebanadaPastel>,
+    pub gastos: Vec<RebanadaPastel>,
 }

@@ -30,6 +30,18 @@
     <div id="wasm-loader">
       <img src="/assets/gecko.svg" alt="Cargando" class="wasm-loader-mascot" />
       <span class="wasm-loader-text">Cargando…</span>
+      <div class="wasm-loader-progress"><div class="wasm-loader-progress-bar"></div></div>
     </div>
+    <script>
+      // Puro JS, sin depender del WASM (que es justo lo que todavía no
+      // cargó): si la app monta en menos de 500ms, el usuario nunca ve
+      // este loader — evita el pantallazo en cargas rápidas/cacheadas.
+      setTimeout(function () {
+        var loader = document.getElementById('wasm-loader');
+        if (loader) {
+          loader.classList.add('visible');
+        }
+      }, 500);
+    </script>
   </body>
 </html>

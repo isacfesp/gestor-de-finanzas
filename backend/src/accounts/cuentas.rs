@@ -20,7 +20,7 @@ use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
-const TIPOS_CUENTA: [&str; 5] = ["cash", "debit", "credit", "savings", "investment"];
+const TIPOS_CUENTA: [&str; 4] = ["cash", "debit", "credit", "savings"];
 
 fn validar_tipo(tipo: &str) -> Result<(), AppError> {
     if TIPOS_CUENTA.contains(&tipo) {

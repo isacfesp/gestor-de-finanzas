@@ -11,7 +11,9 @@ use uuid::Uuid;
 use super::util::hoy;
 use crate::api::{accounting, accounts, agenda};
 use crate::auth::{token_vigente, use_auth};
+use crate::components::hoja_inferior::HojaInferior;
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
+use crate::pages::modulos::cuentas::{FormularioCategoria, FormularioCuenta};
 use crate::workspace::use_workspace;
 
 fn nombre_categoria(categorias: &[accounting::Categoria], id: Option<Uuid>) -> String {
@@ -322,6 +324,10 @@ where
     let auth = use_auth();
     let es_edicion = suscripcion_existente.is_some();
     let id_existente = suscripcion_existente.as_ref().map(|s| s.id);
+    // Signal (no solo prop estática) para poder agregar la categoría/
+    // cuenta recién creada desde la hoja de creación rápida.
+    let categorias = RwSignal::new(categorias);
+    let cuentas = RwSignal::new(cuentas);
 
     let nombre = RwSignal::new(
         suscripcion_existente
@@ -369,6 +375,8 @@ where
     );
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
+    let mostrar_categoria_rapida = RwSignal::new(false);
+    let mostrar_cuenta_rapida = RwSignal::new(false);
 
     let guardar = move |ev: SubmitEvent| {
         ev.prevent_default();
@@ -462,19 +470,33 @@ where
                 </div>
                 <div class="field">
                     <label>"Categoría"</label>
-                    <select
-                        prop:value=move || categoria_id.get()
-                        on:change=move |ev| categoria_id.set(event_target_value(&ev))
-                    >
-                        <option value="">"Sin categoría"</option>
-                        {categorias
-                            .iter()
-                            .map(|c| {
-                                let id = c.id.to_string();
-                                view! { <option value=id.clone()>{c.name.clone()}</option> }
-                            })
-                            .collect_view()}
-                    </select>
+                    <div style="display:flex; gap:6px;">
+                        <select
+                            style="flex:1;"
+                            prop:value=move || categoria_id.get()
+                            on:change=move |ev| categoria_id.set(event_target_value(&ev))
+                        >
+                            <option value="">"Sin categoría"</option>
+                            {move || {
+                                categorias
+                                    .get()
+                                    .into_iter()
+                                    .map(|c| {
+                                        let id = c.id.to_string();
+                                        view! { <option value=id.clone()>{c.name.clone()}</option> }
+                                    })
+                                    .collect_view()
+                            }}
+                        </select>
+                        <button
+                            type="button"
+                            class="btn-ghost"
+                            title="Crear categoría"
+                            on:click=move |_| mostrar_categoria_rapida.set(true)
+                        >
+                            "+"
+                        </button>
+                    </div>
                 </div>
                 <div class="field">
                     <label>"Periodicidad"</label>
@@ -498,20 +520,61 @@ where
                 </div>
                 <div class="field">
                     <label>"Cuenta (opcional)"</label>
-                    <select
-                        prop:value=move || cuenta_id.get()
-                        on:change=move |ev| cuenta_id.set(event_target_value(&ev))
-                    >
-                        <option value="">"Sin cuenta"</option>
-                        {cuentas
-                            .iter()
-                            .map(|c| {
-                                let id = c.id.to_string();
-                                view! { <option value=id.clone()>{c.name.clone()}</option> }
-                            })
-                            .collect_view()}
-                    </select>
+                    <div style="display:flex; gap:6px;">
+                        <select
+                            style="flex:1;"
+                            prop:value=move || cuenta_id.get()
+                            on:change=move |ev| cuenta_id.set(event_target_value(&ev))
+                        >
+                            <option value="">"Sin cuenta"</option>
+                            {move || {
+                                cuentas
+                                    .get()
+                                    .into_iter()
+                                    .map(|c| {
+                                        let id = c.id.to_string();
+                                        view! { <option value=id.clone()>{c.name.clone()}</option> }
+                                    })
+                                    .collect_view()
+                            }}
+                        </select>
+                        <button
+                            type="button"
+                            class="btn-ghost"
+                            title="Crear cuenta"
+                            on:click=move |_| mostrar_cuenta_rapida.set(true)
+                        >
+                            "+"
+                        </button>
+                    </div>
                 </div>
+
+                <HojaInferior abierto=mostrar_categoria_rapida>
+                    <FormularioCategoria
+                        workspace_id=workspace_id
+                        tipo_inicial="expense"
+                        on_creada=move |creada| {
+                            categoria_id.set(creada.id.to_string());
+                            categorias.update(|lista| lista.push(creada));
+                            mostrar_categoria_rapida.set(false);
+                        }
+                        on_cancelar=move || mostrar_categoria_rapida.set(false)
+                    />
+                </HojaInferior>
+                <HojaInferior abierto=mostrar_cuenta_rapida>
+                    <FormularioCuenta
+                        workspace_id=workspace_id
+                        cuenta_existente=None
+                        on_guardado=move |creada| {
+                            if let Some(creada) = creada {
+                                cuenta_id.set(creada.id.to_string());
+                                cuentas.update(|lista| lista.push(creada));
+                            }
+                            mostrar_cuenta_rapida.set(false);
+                        }
+                        on_cancelar=move || mostrar_cuenta_rapida.set(false)
+                    />
+                </HojaInferior>
                 <Show when=move || es_edicion>
                     <div class="field">
                         <label>"Estado"</label>
