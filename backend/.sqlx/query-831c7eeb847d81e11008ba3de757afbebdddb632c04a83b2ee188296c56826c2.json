@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,\n                  start_date, term_days, end_date, is_active, created_at\n           FROM investments\n           WHERE workspace_id = $1\n             AND ($2::bool IS NULL OR is_active = $2)\n             AND ($3::uuid IS NULL OR owner_id = $3)\n           ORDER BY start_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "principal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "gat_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "interest_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "term_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "831c7eeb847d81e11008ba3de757afbebdddb632c04a83b2ee188296c56826c2"
+}

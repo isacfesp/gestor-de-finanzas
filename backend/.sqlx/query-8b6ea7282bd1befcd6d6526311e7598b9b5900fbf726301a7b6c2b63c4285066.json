@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE subscriptions\n           SET name = $1, amount = $2, category_id = $3, periodicity = $4,\n               next_billing_date = $5, is_active = $6, account_id = $7\n           WHERE id = $8 AND workspace_id = $9\n           RETURNING id, workspace_id, owner_id, name, amount, category_id, periodicity,\n                     next_billing_date, is_active, created_at, account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "periodicity",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "next_billing_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "account_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Numeric",
+        "Uuid",
+        "Text",
+        "Date",
+        "Bool",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8b6ea7282bd1befcd6d6526311e7598b9b5900fbf726301a7b6c2b63c4285066"
+}

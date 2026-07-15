@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::api::accounts;
 use crate::auth::{token_vigente, use_auth};
 use crate::components::icono_cuenta::IconoCuenta;
+use crate::workspace::use_workspace;
 
 #[derive(Clone)]
 enum ModoFormulario {
@@ -20,7 +21,9 @@ enum ModoFormulario {
 #[component]
 pub fn PestanaCuentas(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
+    let workspace = use_workspace();
     let modo = RwSignal::new(ModoFormulario::Cerrado);
+    let mi_id = move || auth.usuario().map(|u| u.id);
 
     let cuentas = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
@@ -29,6 +32,18 @@ pub fn PestanaCuentas(workspace_id: Uuid) -> impl IntoView {
         accounts::listar_cuentas(workspace_id, &token)
             .await
             .map_err(|e| e.to_string())
+    });
+
+    // Solo un admin/dev puede pedirlo (403 para member); se ignora el
+    // error y se usa una lista vacía, ya que un member nunca llega a
+    // ver la sección de supervisión donde se necesita.
+    let miembros = LocalResource::new(move || async move {
+        let Some(token) = token_vigente(auth).await else {
+            return Vec::new();
+        };
+        accounts::listar_miembros(workspace_id, &token)
+            .await
+            .unwrap_or_default()
     });
 
     view! {
@@ -69,33 +84,80 @@ pub fn PestanaCuentas(workspace_id: Uuid) -> impl IntoView {
             {move || match cuentas.get() {
                 None => view! { <p class="text-soft">"Cargando cuentas..."</p> }.into_any(),
                 Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
-                Some(Ok(lista)) if lista.is_empty() => {
-                    view! { <p class="text-soft">"Todavía no hay cuentas."</p> }.into_any()
+                Some(Ok(lista)) => {
+                    let (propias, ajenas): (Vec<_>, Vec<_>) = lista
+                        .into_iter()
+                        .partition(|c| Some(c.owner_id) == mi_id());
+
+                    view! {
+                        {if propias.is_empty() {
+                            view! { <p class="text-soft">"Todavía no hay cuentas."</p> }.into_any()
+                        } else {
+                            view! {
+                                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:16px;">
+                                    {propias
+                                        .into_iter()
+                                        .map(|cuenta| {
+                                            let para_editar = cuenta.clone();
+                                            view! {
+                                                <TarjetaCuenta
+                                                    cuenta=cuenta
+                                                    editable=true
+                                                    on_editar=move || modo.set(ModoFormulario::Editar(para_editar.clone()))
+                                                />
+                                            }
+                                        })
+                                        .collect_view()}
+                                </div>
+                            }
+                            .into_any()
+                        }}
+
+                        {
+                            let hay_ajenas = !ajenas.is_empty();
+                            let miembros_ok = miembros.get().unwrap_or_default();
+                            view! {
+                                <Show when=move || workspace.puede_supervisar() && hay_ajenas>
+                                    <h3 class="text-soft" style="margin:24px 0 12px; font-size:13px; font-weight:600;">
+                                        "Cuentas de otros miembros (supervisión)"
+                                    </h3>
+                                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:16px;">
+                                        {ajenas
+                                            .clone()
+                                            .into_iter()
+                                            .map(|cuenta| {
+                                                let propietario = nombre_propietario(&miembros_ok, cuenta.owner_id);
+                                                view! {
+                                                    <TarjetaCuenta cuenta=cuenta editable=false propietario=propietario on_editar=|| {}/>
+                                                }
+                                            })
+                                            .collect_view()}
+                                    </div>
+                                </Show>
+                            }
+                        }
+                    }
+                    .into_any()
                 }
-                Some(Ok(lista)) => view! {
-                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:16px;">
-                        {lista
-                            .into_iter()
-                            .map(|cuenta| {
-                                let para_editar = cuenta.clone();
-                                view! {
-                                    <TarjetaCuenta
-                                        cuenta=cuenta
-                                        on_editar=move || modo.set(ModoFormulario::Editar(para_editar.clone()))
-                                    />
-                                }
-                            })
-                            .collect_view()}
-                    </div>
-                }
-                .into_any(),
             }}
         </section>
     }
 }
 
+fn nombre_propietario(miembros: &[accounts::MiembroBasico], owner_id: Uuid) -> Option<String> {
+    miembros
+        .iter()
+        .find(|m| m.user_id == owner_id)
+        .map(|m| m.name.clone())
+}
+
 #[component]
-fn TarjetaCuenta<F>(cuenta: accounts::Cuenta, on_editar: F) -> impl IntoView
+fn TarjetaCuenta<F>(
+    cuenta: accounts::Cuenta,
+    editable: bool,
+    #[prop(optional_no_strip)] propietario: Option<String>,
+    on_editar: F,
+) -> impl IntoView
 where
     F: Fn() + 'static,
 {
@@ -113,9 +175,20 @@ where
                         </p>
                     </div>
                 </div>
-                <button class="btn-ghost" style="padding:4px 8px; font-size:11px;" on:click=move |_| on_editar()>
-                    "Editar"
-                </button>
+                {if editable {
+                    view! {
+                        <button class="btn-ghost" style="padding:4px 8px; font-size:11px;" on:click=move |_| on_editar()>
+                            "Editar"
+                        </button>
+                    }
+                    .into_any()
+                } else {
+                    let etiqueta = propietario
+                        .clone()
+                        .map(|nombre| format!("De {nombre}"))
+                        .unwrap_or_else(|| "Solo lectura".to_string());
+                    view! { <span class="text-faint" style="font-size:11px;">{etiqueta}</span> }.into_any()
+                }}
             </div>
             {match (cuenta.tipo.as_str(), cuenta.credit_limit) {
                 ("credit", Some(limite)) => {

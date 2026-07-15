@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO subscriptions\n               (workspace_id, owner_id, name, amount, category_id, periodicity, next_billing_date, account_id)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n           RETURNING id, workspace_id, owner_id, name, amount, category_id, periodicity,\n                     next_billing_date, is_active, created_at, account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "periodicity",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "next_billing_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "account_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Numeric",
+        "Uuid",
+        "Text",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "12a850d8f70608fd408b8a121f9801e7b179323268f9da04c320bdd3d622bb5f"
+}

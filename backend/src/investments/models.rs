@@ -13,6 +13,9 @@ use uuid::Uuid;
 pub struct Inversion {
     pub id: Uuid,
     pub workspace_id: Uuid,
+    /// Dueño individual: solo él la crea/edita/elimina. Un admin/dev
+    /// del workspace puede verla (supervisión) pero no operarla.
+    pub owner_id: Uuid,
     pub name: String,
     pub principal: Decimal,
     pub gat_annual_rate: Decimal,

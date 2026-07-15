@@ -35,6 +35,8 @@ pub fn etiqueta_periodicidad(valor: &str) -> &'static str {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Suscripcion {
     pub id: Uuid,
+    /// Dueño individual: solo él la edita/marca cobrada/elimina.
+    pub owner_id: Uuid,
     pub name: String,
     pub amount: Decimal,
     pub category_id: Option<Uuid>,
@@ -148,6 +150,8 @@ pub struct DatosPresupuesto {
 #[derive(Debug, Clone, Deserialize)]
 pub struct EstadoPresupuesto {
     pub id: Uuid,
+    /// Dueño individual: cada usuario tiene su propio límite.
+    pub owner_id: Uuid,
     pub category_id: Uuid,
     pub category_name: String,
     pub limit_amount: Decimal,
@@ -213,6 +217,8 @@ pub struct Previsto {
     pub account_id: Option<Uuid>,
     pub description: Option<String>,
     pub is_paid: bool,
+    /// Quien lo registró: solo él lo edita/marca pagado/elimina.
+    pub created_by: Uuid,
 }
 
 /// Cuerpo de POST y de PUT — el backend usa el mismo struct para ambos.

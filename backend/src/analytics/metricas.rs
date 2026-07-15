@@ -12,8 +12,9 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::analytics::comun::resolver_filtro_usuario;
 use crate::analytics::models::{
-    DistribucionGasto, FiltroMes, FiltroPeriodo, FlujoCaja, TasaAhorro,
+    AhorroNeto, DistribucionGasto, FiltroMes, FiltroPeriodo, FlujoCaja, TasaAhorro,
 };
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
@@ -35,6 +36,7 @@ pub async fn flujo_caja(
     Query(filtro): Query<FiltroPeriodo>,
 ) -> Result<Json<FlujoCaja>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
     let fila = sqlx::query!(
         r#"SELECT
@@ -43,10 +45,12 @@ pub async fn flujo_caja(
            FROM transactions
            WHERE workspace_id = $1 AND is_active = true
              AND ($2::date IS NULL OR date >= $2)
-             AND ($3::date IS NULL OR date <= $3)"#,
+             AND ($3::date IS NULL OR date <= $3)
+             AND ($4::uuid IS NULL OR created_by = $4)"#,
         workspace_id,
         filtro.desde,
-        filtro.hasta
+        filtro.hasta,
+        filtro_usuario
     )
     .fetch_one(&pool)
     .await?;
@@ -60,6 +64,46 @@ pub async fn flujo_caja(
     }))
 }
 
+/// GET /workspaces/:workspace_id/analytics/ahorro-neto?desde=&hasta=
+///
+/// Dinero nuevo que entró a metas en el rango: aportes (ingreso) menos
+/// retiros (egreso), ambos con `goal_id` — monto absoluto, a
+/// diferencia de `tasa_ahorro` que es un porcentaje del mes en curso.
+pub async fn ahorro_neto(
+    State(pool): State<PgPool>,
+    usuario: UsuarioAutenticado,
+    Path(workspace_id): Path<Uuid>,
+    Query(filtro): Query<FiltroPeriodo>,
+) -> Result<Json<AhorroNeto>, AppError> {
+    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
+
+    let fila = sqlx::query!(
+        r#"SELECT
+               COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0) AS "aportado!",
+               COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0) AS "retirado!"
+           FROM transactions
+           WHERE workspace_id = $1 AND is_active = true AND goal_id IS NOT NULL
+             AND ($2::date IS NULL OR date >= $2)
+             AND ($3::date IS NULL OR date <= $3)
+             AND ($4::uuid IS NULL OR created_by = $4)"#,
+        workspace_id,
+        filtro.desde,
+        filtro.hasta,
+        filtro_usuario
+    )
+    .fetch_one(&pool)
+    .await?;
+
+    Ok(Json(AhorroNeto {
+        desde: filtro.desde,
+        hasta: filtro.hasta,
+        aportado: fila.aportado,
+        retirado: fila.retirado,
+        neto: fila.aportado - fila.retirado,
+    }))
+}
+
 /// GET /workspaces/:workspace_id/analytics/tasa-ahorro?month=YYYY-MM-DD
 pub async fn tasa_ahorro(
     State(pool): State<PgPool>,
@@ -68,6 +112,7 @@ pub async fn tasa_ahorro(
     Query(filtro): Query<FiltroMes>,
 ) -> Result<Json<TasaAhorro>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
     let mes = filtro
         .month
@@ -80,9 +125,11 @@ pub async fn tasa_ahorro(
                COALESCE(SUM(amount), 0) AS "total_income!"
            FROM transactions
            WHERE workspace_id = $1 AND type = 'income' AND is_active = true
-             AND date_trunc('month', date)::date = $2"#,
+             AND date_trunc('month', date)::date = $2
+             AND ($3::uuid IS NULL OR created_by = $3)"#,
         workspace_id,
-        mes
+        mes,
+        filtro_usuario
     )
     .fetch_one(&pool)
     .await?;
@@ -109,6 +156,7 @@ pub async fn distribucion_gastos(
     Query(filtro): Query<FiltroPeriodo>,
 ) -> Result<Json<Vec<DistribucionGasto>>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
     let filas = sqlx::query_as!(
         DistribucionGasto,
@@ -120,6 +168,7 @@ pub async fn distribucion_gastos(
                WHERE t.workspace_id = $1 AND t.type = 'expense' AND t.is_active = true
                  AND ($2::date IS NULL OR t.date >= $2)
                  AND ($3::date IS NULL OR t.date <= $3)
+                 AND ($4::uuid IS NULL OR t.created_by = $4)
                GROUP BY t.category_id, c.name
            )
            SELECT category_id, category_name AS "category_name!", monto AS "amount!",
@@ -128,7 +177,8 @@ pub async fn distribucion_gastos(
            ORDER BY monto DESC"#,
         workspace_id,
         filtro.desde,
-        filtro.hasta
+        filtro.hasta,
+        filtro_usuario
     )
     .fetch_all(&pool)
     .await?;

@@ -1,5 +1,6 @@
 // Puerta de entrada del módulo analytics: métricas agregadas en runtime
 // sobre `transactions`, sin tablas propias (ver docs/database.md).
+mod comun;
 mod graficos;
 mod metricas;
 
@@ -12,6 +13,7 @@ use sqlx::PgPool;
 pub fn router() -> Router<PgPool> {
     Router::new()
         .route("/analytics/flujo-caja", get(metricas::flujo_caja))
+        .route("/analytics/ahorro-neto", get(metricas::ahorro_neto))
         .route("/analytics/tasa-ahorro", get(metricas::tasa_ahorro))
         .route(
             "/analytics/distribucion-gastos",

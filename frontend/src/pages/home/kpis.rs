@@ -11,19 +11,25 @@ use crate::api::analytics;
 use crate::auth::{token_vigente, use_auth};
 
 #[component]
-pub fn Kpis(workspace_id: Uuid, desde: RwSignal<String>, hasta: RwSignal<String>) -> impl IntoView {
+pub fn Kpis(
+    workspace_id: Uuid,
+    desde: RwSignal<String>,
+    hasta: RwSignal<String>,
+    alcance: RwSignal<Option<Uuid>>,
+) -> impl IntoView {
     let auth = use_auth();
 
     let flujo = LocalResource::new(move || {
         let desde_txt = desde.get();
         let hasta_txt = hasta.get();
+        let alcance_actual = alcance.get();
         async move {
             let Some(token) = token_vigente(auth).await else {
                 return Err("Sesión vencida".to_string());
             };
             let desde: Option<NaiveDate> = desde_txt.parse().ok();
             let hasta: Option<NaiveDate> = hasta_txt.parse().ok();
-            analytics::flujo_caja(workspace_id, desde, hasta, &token)
+            analytics::flujo_caja(workspace_id, desde, hasta, alcance_actual, &token)
                 .await
                 .map_err(|e| e.to_string())
         }

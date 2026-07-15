@@ -14,7 +14,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 use crate::investments::calculos::{
@@ -51,12 +51,13 @@ pub async fn crear(
     let fila = sqlx::query_as!(
         Inversion,
         r#"INSERT INTO investments
-               (workspace_id, name, principal, gat_annual_rate, interest_type,
+               (workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,
                 start_date, term_days, end_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING id, workspace_id, name, principal, gat_annual_rate, interest_type,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id, workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,
                      start_date, term_days, end_date, is_active, created_at"#,
         workspace_id,
+        usuario.id,
         datos.name.trim(),
         datos.principal,
         datos.gat_annual_rate,
@@ -81,24 +82,29 @@ pub async fn crear(
 }
 
 /// GET /workspaces/:workspace_id/inversiones?activas=true|false
+///
+/// Un `member` solo ve las suyas; un `admin`/dev ve todas (supervisión).
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtros): Query<FiltrosInversiones>,
 ) -> Result<Json<Vec<Inversion>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let filas = sqlx::query_as!(
         Inversion,
-        r#"SELECT id, workspace_id, name, principal, gat_annual_rate, interest_type,
+        r#"SELECT id, workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,
                   start_date, term_days, end_date, is_active, created_at
            FROM investments
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
+             AND ($3::uuid IS NULL OR owner_id = $3)
            ORDER BY start_date DESC"#,
         workspace_id,
-        filtros.activas
+        filtros.activas,
+        solo_propias
     )
     .fetch_all(&pool)
     .await?;
@@ -112,15 +118,19 @@ pub async fn obtener(
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Inversion>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let fila = sqlx::query_as!(
         Inversion,
-        r#"SELECT id, workspace_id, name, principal, gat_annual_rate, interest_type,
+        r#"SELECT id, workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,
                   start_date, term_days, end_date, is_active, created_at
-           FROM investments WHERE id = $1 AND workspace_id = $2"#,
+           FROM investments
+           WHERE id = $1 AND workspace_id = $2
+             AND ($3::uuid IS NULL OR owner_id = $3)"#,
         id,
-        workspace_id
+        workspace_id,
+        solo_propias
     )
     .fetch_optional(&pool)
     .await?
@@ -130,13 +140,29 @@ pub async fn obtener(
 }
 
 /// DELETE /workspaces/:workspace_id/inversiones/:id — borra en cascada
-/// su historial de rendimientos (investment_yields).
+/// su historial de rendimientos (investment_yields). Solo el dueño,
+/// sin excepción de rol (admin/dev solo supervisan, no borran lo ajeno).
 pub async fn eliminar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM investments WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Inversión no encontrada".to_string()))?;
+
+    if owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño de la inversión puede eliminarla".to_string(),
+        ));
+    }
 
     let resultado = sqlx::query!(
         "DELETE FROM investments WHERE id = $1 AND workspace_id = $2",
@@ -171,13 +197,17 @@ pub async fn proyeccion(
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<DesgloseRendimiento>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let inversion = sqlx::query!(
         r#"SELECT principal, gat_annual_rate, interest_type, term_days
-           FROM investments WHERE id = $1 AND workspace_id = $2"#,
+           FROM investments
+           WHERE id = $1 AND workspace_id = $2
+             AND ($3::uuid IS NULL OR owner_id = $3)"#,
         id,
-        workspace_id
+        workspace_id,
+        solo_propias
     )
     .fetch_optional(&pool)
     .await?

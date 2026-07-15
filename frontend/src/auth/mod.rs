@@ -56,6 +56,11 @@ impl AuthContext {
 
     fn limpiar(&self) {
         LocalStorage::delete(CLAVE_STORAGE);
+        // También se olvida el workspace elegido: que un login distinto
+        // en el mismo navegador no arranque con la preferencia de otra
+        // cuenta (crate::workspace::cargar_activo la revalida igual,
+        // esto es higiene, no una corrección de seguridad).
+        LocalStorage::delete(crate::workspace::CLAVE_WORKSPACE);
         self.sesion.set(None);
     }
 }

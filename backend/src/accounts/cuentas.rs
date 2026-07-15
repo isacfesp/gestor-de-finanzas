@@ -12,9 +12,11 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::accounts::models::{ActualizarCuentaDatos, CrearCuentaDatos, Cuenta, FiltrosCuentas};
+use crate::accounts::models::{
+    ActualizarCuentaDatos, CrearCuentaDatos, Cuenta, FiltrosCuentas, MiembroBasico,
+};
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
@@ -50,18 +52,20 @@ fn normalizar_credit_limit(
     }
 }
 
-/// Confirma que `account_id` existe y pertenece a `workspace_id`. La usan
-/// otros módulos (transferencias, previstos) antes de referenciar una
-/// cuenta ajena.
-pub(crate) async fn validar_cuenta(
+/// Confirma que `account_id` existe en `workspace_id` Y pertenece a
+/// `owner_id`. Operar sobre la cuenta de otro se trata igual que
+/// "cuenta inexistente" (las cuentas son personales).
+pub(crate) async fn validar_cuenta_propia(
     pool: &PgPool,
     account_id: Uuid,
     workspace_id: Uuid,
+    owner_id: Uuid,
 ) -> Result<(), AppError> {
     let existe = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1 AND workspace_id = $2)",
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = $1 AND workspace_id = $2 AND owner_id = $3)",
         account_id,
-        workspace_id
+        workspace_id,
+        owner_id
     )
     .fetch_one(pool)
     .await?
@@ -96,11 +100,12 @@ pub async fn crear(
 
     let resultado = sqlx::query_as!(
         Cuenta,
-        r#"INSERT INTO accounts (workspace_id, name, type, balance, currency, credit_limit)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING id, workspace_id, name, type AS "tipo", balance, currency,
+        r#"INSERT INTO accounts (workspace_id, owner_id, name, type, balance, currency, credit_limit)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, workspace_id, owner_id, name, type AS "tipo", balance, currency,
                      is_active, credit_limit, created_at"#,
         workspace_id,
+        usuario.id,
         datos.name.trim(),
         datos.tipo,
         balance_inicial,
@@ -134,24 +139,63 @@ pub async fn crear(
 }
 
 /// GET /workspaces/:workspace_id/cuentas?activas=true|false
+///
+/// Un `member` solo ve sus propias cuentas (ni se entera de que
+/// existen otras); un `admin`/dev ve todas, para supervisión.
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtros): Query<FiltrosCuentas>,
 ) -> Result<Json<Vec<Cuenta>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let filas = sqlx::query_as!(
         Cuenta,
-        r#"SELECT id, workspace_id, name, type AS "tipo", balance, currency,
+        r#"SELECT id, workspace_id, owner_id, name, type AS "tipo", balance, currency,
                   is_active, credit_limit, created_at
            FROM accounts
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
+             AND ($3::uuid IS NULL OR owner_id = $3)
            ORDER BY name"#,
         workspace_id,
-        filtros.activas
+        filtros.activas,
+        solo_propias
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    Ok(Json(filas))
+}
+
+/// GET /workspaces/:workspace_id/cuentas/miembros
+///
+/// Nombre e id de cada miembro del workspace, solo para que un
+/// admin/dev arme el mapa "de quién es esta cuenta" en la vista de
+/// supervisión. Un member recibe 403: no necesita conocer a sus
+/// compañeros de workspace para operar sus propias cuentas.
+pub async fn listar_miembros(
+    State(pool): State<PgPool>,
+    usuario: UsuarioAutenticado,
+    Path(workspace_id): Path<Uuid>,
+) -> Result<Json<Vec<MiembroBasico>>, AppError> {
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    if matches!(rol, RolWorkspace::Member) {
+        return Err(AppError::Prohibido(
+            "Solo un admin puede ver la lista de miembros".to_string(),
+        ));
+    }
+
+    let filas = sqlx::query_as!(
+        MiembroBasico,
+        r#"SELECT u.id AS user_id, u.name
+           FROM workspace_members m
+           JOIN users u ON u.id = m.user_id
+           WHERE m.workspace_id = $1
+           ORDER BY u.name"#,
+        workspace_id
     )
     .fetch_all(&pool)
     .await?;
@@ -160,6 +204,10 @@ pub async fn listar(
 }
 
 /// PUT /workspaces/:workspace_id/cuentas/:id — no toca el balance.
+///
+/// Solo el dueño puede editar su cuenta: ni el admin del workspace ni
+/// un dev pasan por encima de esto (su rol solo les da supervisión de
+/// lectura, ver `listar`).
 pub async fn actualizar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -175,6 +223,21 @@ pub async fn actualizar(
         ));
     }
 
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM accounts WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Cuenta no encontrada".to_string()))?;
+
+    if owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño de la cuenta puede editarla".to_string(),
+        ));
+    }
+
     let credit_limit = normalizar_credit_limit(&datos.tipo, datos.credit_limit)?;
 
     let resultado = sqlx::query_as!(
@@ -182,7 +245,7 @@ pub async fn actualizar(
         r#"UPDATE accounts
            SET name = $1, type = $2, currency = $3, is_active = $4, credit_limit = $5
            WHERE id = $6 AND workspace_id = $7
-           RETURNING id, workspace_id, name, type AS "tipo", balance, currency,
+           RETURNING id, workspace_id, owner_id, name, type AS "tipo", balance, currency,
                      is_active, credit_limit, created_at"#,
         datos.name.trim(),
         datos.tipo,
@@ -219,13 +282,28 @@ pub async fn actualizar(
     }
 }
 
-/// DELETE /workspaces/:workspace_id/cuentas/:id
+/// DELETE /workspaces/:workspace_id/cuentas/:id — solo el dueño.
 pub async fn eliminar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM accounts WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Cuenta no encontrada".to_string()))?;
+
+    if owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño de la cuenta puede eliminarla".to_string(),
+        ));
+    }
 
     let resultado = sqlx::query!(
         "DELETE FROM accounts WHERE id = $1 AND workspace_id = $2",

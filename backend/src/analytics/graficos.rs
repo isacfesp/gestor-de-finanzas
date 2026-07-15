@@ -21,6 +21,7 @@ use rust_decimal::prelude::ToPrimitive;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::analytics::comun::resolver_filtro_usuario;
 use crate::analytics::models::{FiltroFlujoPastel, FiltroTendencia, GraficoSvg};
 use crate::auth::autorizacion::verificar_membresia;
 use crate::auth::extractores::UsuarioAutenticado;
@@ -109,12 +110,110 @@ fn etiqueta_mes(fecha: NaiveDate) -> String {
     format!("{} {}", MESES_ABREV[fecha.month0() as usize], fecha.year())
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/tendencia?meses=&tema=
+/// Vista de la gráfica de tendencia — a diferencia de un diseño
+/// genérico "granularidad + cantidad de períodos", cada vista fija
+/// tanto el rango de fechas como la unidad de agrupación, porque así
+/// lo pidió el negocio: "semana" es la semana en curso día por día,
+/// "mes" es el mes en curso semana por semana, y "año" son los últimos
+/// 12 meses, mes por mes. Un `match` cerrado a estas 3 variantes es lo
+/// que hace seguro pasar `date_trunc_pg(v)` como parámetro de
+/// `date_trunc` en SQL: nunca puede llegar un string arbitrario del
+/// cliente, solo uno de estos 3 literales fijos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Vista {
+    Semana,
+    Mes,
+    Anio,
+}
+
+fn parsear_vista(valor: Option<&str>) -> Vista {
+    match valor {
+        Some("semana") => Vista::Semana,
+        Some("año") | Some("anio") => Vista::Anio,
+        _ => Vista::Mes,
+    }
+}
+
+fn date_trunc_pg(v: Vista) -> &'static str {
+    match v {
+        Vista::Semana => "day",
+        Vista::Mes => "week",
+        Vista::Anio => "month",
+    }
+}
+
+/// Lunes de la semana calendario (ISO) que contiene `fecha`.
+fn lunes_de_semana(fecha: NaiveDate) -> NaiveDate {
+    fecha - chrono::Duration::days(fecha.weekday().num_days_from_monday() as i64)
+}
+
+fn ultimo_dia_del_mes(primer_dia: NaiveDate) -> NaiveDate {
+    sumar_meses(primer_dia, 1) - chrono::Duration::days(1)
+}
+
+const DIAS_ABREV: [&str; 7] = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
+
+fn etiqueta_dia(fecha: NaiveDate) -> String {
+    format!(
+        "{} {}",
+        DIAS_ABREV[fecha.weekday().num_days_from_monday() as usize],
+        fecha.day()
+    )
+}
+
+fn etiqueta_semana(fecha: NaiveDate) -> String {
+    fecha.format("%d/%m").to_string()
+}
+
+fn etiqueta_punto(fecha: NaiveDate, v: Vista) -> String {
+    match v {
+        Vista::Semana => etiqueta_dia(fecha),
+        Vista::Mes => etiqueta_semana(fecha),
+        Vista::Anio => etiqueta_mes(fecha),
+    }
+}
+
+/// Rango de fechas a consultar (inclusive en ambos extremos) y grilla
+/// completa de puntos del eje X, según la vista elegida.
+fn rango_y_grilla(v: Vista, hoy: NaiveDate) -> (NaiveDate, NaiveDate, Vec<NaiveDate>) {
+    match v {
+        Vista::Semana => {
+            let lunes = lunes_de_semana(hoy);
+            let domingo = lunes + chrono::Duration::days(6);
+            let grilla = (0..7).map(|i| lunes + chrono::Duration::days(i)).collect();
+            (lunes, domingo, grilla)
+        }
+        Vista::Mes => {
+            let primer_dia = primer_dia_del_mes(hoy);
+            let ultimo_dia = ultimo_dia_del_mes(primer_dia);
+            // Grilla por semana ISO: la primera/última semana del mes
+            // pueden empezar en el mes anterior/terminar en el
+            // siguiente — se etiquetan igual, por su lunes.
+            let primera_semana = lunes_de_semana(primer_dia);
+            let ultima_semana = lunes_de_semana(ultimo_dia);
+            let cantidad_semanas = (ultima_semana - primera_semana).num_weeks() + 1;
+            let grilla = (0..cantidad_semanas)
+                .map(|i| primera_semana + chrono::Duration::weeks(i))
+                .collect();
+            (primer_dia, ultimo_dia, grilla)
+        }
+        Vista::Anio => {
+            let fin = primer_dia_del_mes(hoy);
+            let inicio = sumar_meses(fin, -11);
+            let grilla = (0..12).map(|i| sumar_meses(inicio, i)).collect();
+            (inicio, ultimo_dia_del_mes(fin), grilla)
+        }
+    }
+}
+
+/// GET /workspaces/:workspace_id/analytics/charts/tendencia?tema=&granularidad=
 ///
-/// Ingresos/egresos mensuales de los últimos `meses` (6 por defecto,
-/// tope 24) — no existe un endpoint de serie temporal reutilizable
-/// (`flujo_caja` en `metricas.rs` solo agrega un rango a un único
-/// total), así que esta consulta agrupa por mes aparte.
+/// Ingresos/egresos según la vista elegida (`granularidad`): "semana"
+/// muestra la semana en curso día por día, "mes" el mes en curso
+/// semana por semana, y "año" (por defecto "mes") los últimos 12
+/// meses, mes por mes — no existe un endpoint de serie temporal
+/// reutilizable (`flujo_caja` en `metricas.rs` solo agrega un rango a
+/// un único total), así que esta consulta agrupa aparte.
 pub async fn tendencia(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -122,39 +221,43 @@ pub async fn tendencia(
     Query(filtro): Query<FiltroTendencia>,
 ) -> Result<Json<GraficoSvg>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
-    let meses = filtro.meses.unwrap_or(6).clamp(1, 24);
-    let mes_final = primer_dia_del_mes(Utc::now().date_naive());
-    let mes_inicial = sumar_meses(mes_final, -(meses - 1));
+    let vista = parsear_vista(filtro.granularidad.as_deref());
+    let (rango_inicio, rango_fin, grilla) = rango_y_grilla(vista, Utc::now().date_naive());
 
     let filas = sqlx::query!(
-        r#"SELECT date_trunc('month', date)::date AS "mes!",
+        r#"SELECT date_trunc($5::text, date)::date AS "periodo!",
                COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0) AS "income!",
                COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0) AS "expense!"
            FROM transactions
-           WHERE workspace_id = $1 AND is_active = true AND date >= $2
+           WHERE workspace_id = $1 AND is_active = true
+             AND date >= $2 AND date <= $3
+             AND ($4::uuid IS NULL OR created_by = $4)
            GROUP BY 1
            ORDER BY 1"#,
         workspace_id,
-        mes_inicial
+        rango_inicio,
+        rango_fin,
+        filtro_usuario,
+        date_trunc_pg(vista)
     )
     .fetch_all(&pool)
     .await?;
 
-    // Rejilla completa de meses: aunque uno no tenga movimientos, el
+    // Rejilla completa de puntos: aunque uno no tenga movimientos, el
     // eje X debe mostrarlo en 0, no saltárselo (si no, el eje pierde
     // la escala temporal uniforme y las barras/puntos "se acercan").
-    let grilla: Vec<NaiveDate> = (0..meses).map(|i| sumar_meses(mes_inicial, i)).collect();
-    let monto_de = |mes: NaiveDate, elegir: fn(&Decimal, &Decimal) -> Decimal| {
+    let monto_de = |periodo: NaiveDate, elegir: fn(&Decimal, &Decimal) -> Decimal| {
         filas
             .iter()
-            .find(|f| f.mes == mes)
+            .find(|f| f.periodo == periodo)
             .map(|f| decimal_a_f32(elegir(&f.income, &f.expense)))
             .unwrap_or(0.0)
     };
     let ingresos: Vec<f32> = grilla.iter().map(|m| monto_de(*m, |i, _| *i)).collect();
     let egresos: Vec<f32> = grilla.iter().map(|m| monto_de(*m, |_, e| *e)).collect();
-    let etiquetas: Vec<String> = grilla.iter().map(|m| etiqueta_mes(*m)).collect();
+    let etiquetas: Vec<String> = grilla.iter().map(|m| etiqueta_punto(*m, vista)).collect();
 
     // Sin esto, cuando no hay movimientos en todo el rango (workspace
     // nuevo/de prueba) `charts-rs` calcula el eje Y como min == max ==
@@ -193,10 +296,13 @@ pub async fn tendencia(
 
 /// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&tema=
 ///
-/// Mismo cálculo que `metricas::distribucion_gastos` (gasto por
-/// categoría en el rango pedido), pero como pastel real en vez de la
-/// barra apilada CSS del dashboard — pedido explícito de diseño, no un
-/// descuido de la convención "nunca donut" de la skill dataviz.
+/// Ingresos Y gastos por categoría en el rango pedido, en un solo
+/// pastel — cada rebanada es una categoría de un tipo (`"Ingreso ·
+/// Sueldo"`, `"Gasto · Comida"`), con el porcentaje calculado sobre el
+/// total combinado (`PieChart` reparte proporciones sobre la suma de
+/// todas las series que recibe). Se agrupa por `(type, category_name)`
+/// y no solo por `category_name` para no mezclar el bucket "Sin
+/// categoría" de ingreso con el de gasto.
 pub async fn flujo_pastel(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -204,19 +310,23 @@ pub async fn flujo_pastel(
     Query(filtro): Query<FiltroFlujoPastel>,
 ) -> Result<Json<GraficoSvg>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let filtro_usuario = resolver_filtro_usuario(&usuario, filtro.user_id);
 
     let filas = sqlx::query!(
-        r#"SELECT COALESCE(c.name, 'Sin categoría') AS "category_name!", SUM(t.amount) AS "amount!"
+        r#"SELECT t.type AS "tipo!", COALESCE(c.name, 'Sin categoría') AS "category_name!",
+                  SUM(t.amount) AS "amount!"
            FROM transactions t
            LEFT JOIN categories c ON c.id = t.category_id
-           WHERE t.workspace_id = $1 AND t.type = 'expense' AND t.is_active = true
+           WHERE t.workspace_id = $1 AND t.is_active = true
              AND ($2::date IS NULL OR t.date >= $2)
              AND ($3::date IS NULL OR t.date <= $3)
-           GROUP BY c.name
-           ORDER BY 2 DESC"#,
+             AND ($4::uuid IS NULL OR t.created_by = $4)
+           GROUP BY t.type, c.name
+           ORDER BY 3 DESC"#,
         workspace_id,
         filtro.desde,
-        filtro.hasta
+        filtro.hasta,
+        filtro_usuario
     )
     .fetch_all(&pool)
     .await?;
@@ -232,7 +342,17 @@ pub async fn flujo_pastel(
     let paleta = paleta(filtro.tema.as_deref());
     let series_list: Vec<Series> = filas
         .iter()
-        .map(|f| Series::new(f.category_name.clone(), vec![decimal_a_f32(f.amount)]))
+        .map(|f| {
+            let prefijo = if f.tipo == "income" {
+                "Ingreso"
+            } else {
+                "Gasto"
+            };
+            Series::new(
+                format!("{prefijo} · {}", f.category_name),
+                vec![decimal_a_f32(f.amount)],
+            )
+        })
         .collect();
     let colores: Vec<Color> = (0..series_list.len())
         .map(|i| categoria_color(&paleta, i))

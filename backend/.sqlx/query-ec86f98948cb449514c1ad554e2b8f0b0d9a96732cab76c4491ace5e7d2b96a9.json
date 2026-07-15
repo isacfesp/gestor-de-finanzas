@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, owner_id, category_id, month, limit_amount\n           FROM budgets\n           WHERE workspace_id = $1\n             AND ($2::date IS NULL OR month = $2)\n             AND ($3::uuid IS NULL OR owner_id = $3)\n           ORDER BY month DESC, category_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "month",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "limit_amount",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ec86f98948cb449514c1ad554e2b8f0b0d9a96732cab76c4491ace5e7d2b96a9"
+}

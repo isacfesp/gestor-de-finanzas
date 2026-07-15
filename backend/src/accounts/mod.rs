@@ -6,7 +6,7 @@ mod transferencias;
 
 pub mod models;
 
-pub(crate) use cuentas::validar_cuenta;
+pub(crate) use cuentas::validar_cuenta_propia;
 
 use axum::{
     Router,
@@ -18,6 +18,7 @@ use sqlx::PgPool;
 pub fn router() -> Router<PgPool> {
     Router::new()
         .route("/cuentas", get(cuentas::listar).post(cuentas::crear))
+        .route("/cuentas/miembros", get(cuentas::listar_miembros))
         .route(
             "/cuentas/:id",
             put(cuentas::actualizar).delete(cuentas::eliminar),

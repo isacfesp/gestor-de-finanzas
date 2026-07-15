@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, type AS \"tipo\", amount, due_date,\n                  category_id, account_id, description, is_paid, created_by, created_at\n           FROM planned_transactions\n           WHERE workspace_id = $1\n             AND ($2::date IS NULL OR due_date >= $2)\n             AND ($3::date IS NULL OR due_date <= $3)\n             AND ($4::bool IS NULL OR is_paid = $4)\n             AND ($5::uuid IS NULL OR created_by = $5)\n           ORDER BY is_paid, due_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "tipo",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "due_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_paid",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1365eee4219200aa786fb0b3c2474ea60d7e0bb7a89c60e0477bebaa20559018"
+}

@@ -15,18 +15,31 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 use crate::investments::models::{CrearRendimientoDatos, Rendimiento};
 
-/// Confirma que la inversión exista y pertenezca al workspace, para no
-/// registrar (ni listar) rendimientos de una inversión ajena.
-async fn validar_inversion(pool: &PgPool, id: Uuid, workspace_id: Uuid) -> Result<(), AppError> {
+/// Confirma que la inversión exista y pertenezca al workspace. Si
+/// `propietario` es `Some`, además exige que sea el dueño (para
+/// `registrar`, que siempre lo exige) — si es `None`, cualquier
+/// miembro del workspace pasa (usado por `listar` cuando quien
+/// pregunta es admin/dev, en modo supervisión).
+async fn validar_inversion(
+    pool: &PgPool,
+    id: Uuid,
+    workspace_id: Uuid,
+    propietario: Option<Uuid>,
+) -> Result<(), AppError> {
     let existe = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM investments WHERE id = $1 AND workspace_id = $2)",
+        r#"SELECT EXISTS(
+               SELECT 1 FROM investments
+               WHERE id = $1 AND workspace_id = $2
+                 AND ($3::uuid IS NULL OR owner_id = $3)
+           )"#,
         id,
-        workspace_id
+        workspace_id,
+        propietario
     )
     .fetch_one(pool)
     .await?
@@ -41,7 +54,8 @@ async fn validar_inversion(pool: &PgPool, id: Uuid, workspace_id: Uuid) -> Resul
     }
 }
 
-/// POST /workspaces/:workspace_id/inversiones/:id/rendimientos
+/// POST /workspaces/:workspace_id/inversiones/:id/rendimientos — solo
+/// el dueño de la inversión puede registrar un rendimiento.
 pub async fn registrar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -49,7 +63,7 @@ pub async fn registrar(
     Json(datos): Json<CrearRendimientoDatos>,
 ) -> Result<(StatusCode, Json<Rendimiento>), AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
-    validar_inversion(&pool, id, workspace_id).await?;
+    validar_inversion(&pool, id, workspace_id, Some(usuario.id)).await?;
 
     if datos.yield_amount <= Decimal::ZERO {
         return Err(AppError::NoProcesable(
@@ -82,14 +96,17 @@ pub async fn registrar(
     Ok((StatusCode::CREATED, Json(fila)))
 }
 
-/// GET /workspaces/:workspace_id/inversiones/:id/rendimientos
+/// GET /workspaces/:workspace_id/inversiones/:id/rendimientos — un
+/// admin/dev puede ver el historial de cualquier inversión
+/// (supervisión), un member solo el de las suyas.
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Vec<Rendimiento>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
-    validar_inversion(&pool, id, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
+    validar_inversion(&pool, id, workspace_id, solo_propias).await?;
 
     let filas = sqlx::query_as!(
         Rendimiento,

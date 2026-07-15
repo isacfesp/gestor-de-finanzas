@@ -21,6 +21,7 @@ pub fn Distribucion(
     workspace_id: Uuid,
     desde: RwSignal<String>,
     hasta: RwSignal<String>,
+    alcance: RwSignal<Option<Uuid>>,
 ) -> impl IntoView {
     let auth = use_auth();
     let tema = use_theme();
@@ -29,28 +30,36 @@ pub fn Distribucion(
         let desde_txt = desde.get();
         let hasta_txt = hasta.get();
         let tema_txt = tema.actual().como_texto();
+        let alcance_actual = alcance.get();
         async move {
             let Some(token) = token_vigente(auth).await else {
                 return Err("Sesión vencida".to_string());
             };
             let desde: Option<NaiveDate> = desde_txt.parse().ok();
             let hasta: Option<NaiveDate> = hasta_txt.parse().ok();
-            analytics::flujo_pastel_svg(workspace_id, desde, hasta, tema_txt, &token)
-                .await
-                .map_err(|e| e.to_string())
+            analytics::flujo_pastel_svg(
+                workspace_id,
+                desde,
+                hasta,
+                tema_txt,
+                alcance_actual,
+                &token,
+            )
+            .await
+            .map_err(|e| e.to_string())
         }
     });
 
     view! {
         <section class="panel" style="margin-top:16px;">
             <div class="panel-head">
-                <h2>"Distribución de gastos"</h2>
+                <h2>"Ingresos y gastos por categoría"</h2>
             </div>
             {move || match svg.get() {
                 None => view! { <p class="text-soft">"Calculando..."</p> }.into_any(),
                 Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
                 Some(Ok(marcado)) if marcado.is_empty() => {
-                    view! { <p class="text-soft">"No hay gastos en este período."</p> }.into_any()
+                    view! { <p class="text-soft">"No hay movimientos en este período."</p> }.into_any()
                 }
                 Some(Ok(marcado)) => {
                     view! { <div class="flex justify-center" inner_html=marcado></div> }.into_any()

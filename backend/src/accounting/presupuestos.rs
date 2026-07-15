@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::accounting::categorias::validar_categoria;
 use crate::accounting::models::{CrearPresupuestoDatos, EstadoPresupuesto, FiltroMes, Presupuesto};
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
@@ -55,12 +55,13 @@ pub async fn crear(
 
     let fila = sqlx::query_as!(
         Presupuesto,
-        r#"INSERT INTO budgets (workspace_id, category_id, month, limit_amount)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (workspace_id, category_id, month)
+        r#"INSERT INTO budgets (workspace_id, owner_id, category_id, month, limit_amount)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (workspace_id, owner_id, category_id, month)
                DO UPDATE SET limit_amount = EXCLUDED.limit_amount
-           RETURNING id, workspace_id, category_id, month, limit_amount"#,
+           RETURNING id, workspace_id, owner_id, category_id, month, limit_amount"#,
         workspace_id,
+        usuario.id,
         datos.category_id,
         mes,
         datos.limit_amount
@@ -81,23 +82,29 @@ pub async fn crear(
 }
 
 /// GET /workspaces/:workspace_id/presupuestos?month=YYYY-MM-DD
+///
+/// Un `member` solo ve los suyos; un `admin`/dev ve todos (supervisión).
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtro): Query<FiltroMes>,
 ) -> Result<Json<Vec<Presupuesto>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propios = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
     let mes = filtro.month.map(primer_dia_del_mes);
 
     let filas = sqlx::query_as!(
         Presupuesto,
-        r#"SELECT id, workspace_id, category_id, month, limit_amount
+        r#"SELECT id, workspace_id, owner_id, category_id, month, limit_amount
            FROM budgets
-           WHERE workspace_id = $1 AND ($2::date IS NULL OR month = $2)
+           WHERE workspace_id = $1
+             AND ($2::date IS NULL OR month = $2)
+             AND ($3::uuid IS NULL OR owner_id = $3)
            ORDER BY month DESC, category_id"#,
         workspace_id,
-        mes
+        mes,
+        solo_propios
     )
     .fetch_all(&pool)
     .await?;
@@ -115,15 +122,20 @@ pub async fn estado(
     Path(workspace_id): Path<Uuid>,
     Query(filtro): Query<FiltroMes>,
 ) -> Result<Json<Vec<EstadoPresupuesto>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propios = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
     let mes = filtro.month.map(primer_dia_del_mes).unwrap_or_else(|| {
         // Sin mes explícito: se asume el mes en curso.
         primer_dia_del_mes(Utc::now().date_naive())
     });
 
+    // El gasto de cada presupuesto se compara solo contra las
+    // transacciones de SU propio dueño (`t.created_by = b.owner_id`):
+    // las transacciones también son personales, así que el gasto de un
+    // miembro nunca debe contarse en el presupuesto de otro.
     let filas = sqlx::query_as!(
         EstadoPresupuesto,
-        r#"SELECT b.id, b.category_id, c.name AS category_name, b.month, b.limit_amount,
+        r#"SELECT b.id, b.owner_id, b.category_id, c.name AS category_name, b.month, b.limit_amount,
                   COALESCE(SUM(t.amount), 0) AS "spent!",
                   (COALESCE(SUM(t.amount), 0) * 100 / b.limit_amount) AS "percentage!"
            FROM budgets b
@@ -131,14 +143,17 @@ pub async fn estado(
            LEFT JOIN transactions t
                ON t.category_id = b.category_id
               AND t.workspace_id = b.workspace_id
+              AND t.created_by = b.owner_id
               AND t.type = 'expense'
               AND t.is_active = true
               AND date_trunc('month', t.date) = b.month
            WHERE b.workspace_id = $1 AND b.month = $2
+             AND ($3::uuid IS NULL OR b.owner_id = $3)
            GROUP BY b.id, c.name
            ORDER BY c.name"#,
         workspace_id,
-        mes
+        mes,
+        solo_propios
     )
     .fetch_all(&pool)
     .await?;
@@ -146,13 +161,28 @@ pub async fn estado(
     Ok(Json(filas))
 }
 
-/// DELETE /workspaces/:workspace_id/presupuestos/:id
+/// DELETE /workspaces/:workspace_id/presupuestos/:id — solo el dueño.
 pub async fn eliminar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM budgets WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Presupuesto no encontrado".to_string()))?;
+
+    if owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño del presupuesto puede eliminarlo".to_string(),
+        ));
+    }
 
     let resultado = sqlx::query!(
         "DELETE FROM budgets WHERE id = $1 AND workspace_id = $2",

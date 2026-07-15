@@ -283,6 +283,12 @@ pub async fn yo(
 pub struct WorkspaceResumen {
     pub id: Uuid,
     pub name: String,
+    /// Rol efectivo del usuario en ESTE workspace: "admin" o "member"
+    /// (de `workspace_members.role`), o "dev" cuando quien lista es un
+    /// dev global sin fila propia de membresía — el frontend lo usa
+    /// para saber si puede supervisar cuentas ajenas o inspeccionar
+    /// métricas de otros miembros.
+    pub role: String,
 }
 
 /// Los workspaces del usuario autenticado: un dev ve todos los tenants
@@ -298,14 +304,20 @@ pub async fn mis_workspaces(
     let filas = if usuario.es_dev() {
         sqlx::query_as!(
             WorkspaceResumen,
-            "SELECT id, name FROM workspaces ORDER BY created_at"
+            r#"SELECT w.id, w.name, COALESCE(m.role, 'dev') AS "role!"
+               FROM workspaces w
+               LEFT JOIN workspace_members m
+                 ON m.workspace_id = w.id AND m.user_id = $1
+               ORDER BY w.created_at"#,
+            usuario.id
         )
         .fetch_all(&pool)
         .await?
     } else {
         sqlx::query_as!(
             WorkspaceResumen,
-            r#"SELECT w.id, w.name FROM workspaces w
+            r#"SELECT w.id, w.name, m.role AS "role!"
+               FROM workspaces w
                JOIN workspace_members m ON m.workspace_id = w.id
                WHERE m.user_id = $1
                ORDER BY w.name"#,

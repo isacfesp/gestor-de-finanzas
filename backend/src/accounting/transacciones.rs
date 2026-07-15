@@ -20,9 +20,11 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounting::categorias::validar_categoria;
-use crate::accounting::models::{DatosTransaccion, FiltrosTransacciones, Transaccion};
+use crate::accounting::models::{
+    DatosTransaccion, FiltrosTransacciones, Transaccion, TransaccionListado,
+};
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
@@ -76,6 +78,11 @@ pub async fn crear(
 ) -> Result<(StatusCode, Json<Transaccion>), AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
     validar_datos(&pool, workspace_id, &datos).await?;
+    // Las cuentas son personales: solo su dueño puede registrar
+    // movimientos sobre ella (si cualquier miembro pudiera hacerlo, el
+    // dueño de accounts::Cuenta no significaría nada).
+    crate::accounts::validar_cuenta_propia(&pool, datos.account_id, workspace_id, usuario.id)
+        .await?;
 
     let mut tx = pool.begin().await?;
 
@@ -137,33 +144,41 @@ pub async fn crear(
 /// cliente no lo manda, la condición se anula sola y no afecta la
 /// consulta. Así se arma un solo SQL estático (verificable en tiempo de
 /// compilación) sin tener que construir el texto de la query a mano.
+/// Un `member` solo ve sus propias transacciones (son personales); un
+/// `admin`/dev ve las de todo el workspace (supervisión).
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtros): Query<FiltrosTransacciones>,
-) -> Result<Json<Vec<Transaccion>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+) -> Result<Json<Vec<TransaccionListado>>, AppError> {
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let limite = filtros.limite.unwrap_or(50).clamp(1, 200);
     let desplazamiento = filtros.desplazamiento.unwrap_or(0).max(0);
 
     let filas = sqlx::query_as!(
-        Transaccion,
-        r#"SELECT id, workspace_id, type AS "tipo", amount, date,
-                  category_id, account_id, description, created_by, created_at
-           FROM transactions
-           WHERE workspace_id = $1
-             AND is_active = true
-             AND ($2::text IS NULL OR type = $2)
-             AND ($3::uuid IS NULL OR category_id = $3)
-             AND ($4::date IS NULL OR date >= $4)
-             AND ($5::date IS NULL OR date <= $5)
+        TransaccionListado,
+        r#"SELECT t.id, t.workspace_id, t.type AS "tipo", t.amount, t.date,
+                  t.category_id, t.account_id, a.name AS account_name,
+                  a.type AS account_tipo, t.description, t.created_by,
+                  u.name AS created_by_name, t.created_at
+           FROM transactions t
+           JOIN users u ON u.id = t.created_by
+           JOIN accounts a ON a.id = t.account_id
+           WHERE t.workspace_id = $1
+             AND t.is_active = true
+             AND ($2::text IS NULL OR t.type = $2)
+             AND ($3::uuid IS NULL OR t.category_id = $3)
+             AND ($4::date IS NULL OR t.date >= $4)
+             AND ($5::date IS NULL OR t.date <= $5)
              AND ($6::uuid IS NULL OR EXISTS (
                    SELECT 1 FROM transaction_tags tt
-                   WHERE tt.transaction_id = transactions.id AND tt.tag_id = $6
+                   WHERE tt.transaction_id = t.id AND tt.tag_id = $6
                  ))
-           ORDER BY date DESC, created_at DESC
+             AND ($9::uuid IS NULL OR t.created_by = $9)
+           ORDER BY t.date DESC, t.created_at DESC
            LIMIT $7 OFFSET $8"#,
         workspace_id,
         filtros.tipo,
@@ -172,7 +187,8 @@ pub async fn listar(
         filtros.hasta,
         filtros.tag_id,
         limite,
-        desplazamiento
+        desplazamiento,
+        solo_propias
     )
     .fetch_all(&pool)
     .await?;
@@ -217,11 +233,13 @@ pub async fn actualizar(
 ) -> Result<Json<Transaccion>, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
     validar_datos(&pool, workspace_id, &datos).await?;
+    crate::accounts::validar_cuenta_propia(&pool, datos.account_id, workspace_id, usuario.id)
+        .await?;
 
     let mut tx = pool.begin().await?;
 
     let anterior = sqlx::query!(
-        r#"SELECT type AS "tipo", amount, account_id FROM transactions
+        r#"SELECT type AS "tipo", amount, account_id, created_by FROM transactions
            WHERE id = $1 AND workspace_id = $2 AND is_active = true FOR UPDATE"#,
         id,
         workspace_id
@@ -229,6 +247,14 @@ pub async fn actualizar(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Transacción no encontrada".to_string()))?;
+
+    // Solo quien registró el movimiento puede editarlo; un dev pasa por
+    // encima, igual que en el resto del sistema.
+    if anterior.created_by != usuario.id && !usuario.es_dev() {
+        return Err(AppError::Prohibido(
+            "Solo quien registró el movimiento puede editarlo".to_string(),
+        ));
+    }
 
     let (primera, segunda) = if anterior.account_id < datos.account_id {
         (anterior.account_id, datos.account_id)
@@ -315,7 +341,7 @@ pub async fn eliminar(
     let mut tx = pool.begin().await?;
 
     let fila = sqlx::query!(
-        r#"SELECT type AS "tipo", amount, account_id FROM transactions
+        r#"SELECT type AS "tipo", amount, account_id, created_by FROM transactions
            WHERE id = $1 AND workspace_id = $2 AND is_active = true FOR UPDATE"#,
         id,
         workspace_id
@@ -323,6 +349,12 @@ pub async fn eliminar(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Transacción no encontrada".to_string()))?;
+
+    if fila.created_by != usuario.id && !usuario.es_dev() {
+        return Err(AppError::Prohibido(
+            "Solo quien registró el movimiento puede eliminarlo".to_string(),
+        ));
+    }
 
     // La cuenta siempre existe (la FK lo garantiza): no hace falta
     // validar, solo bloquearla antes de tocar su saldo.

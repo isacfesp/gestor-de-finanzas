@@ -12,11 +12,23 @@ use super::util::hoy;
 use crate::api::{accounting, accounts, agenda};
 use crate::auth::{token_vigente, use_auth};
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
+use crate::workspace::use_workspace;
 
 fn nombre_categoria(categorias: &[accounting::Categoria], id: Option<Uuid>) -> String {
     id.and_then(|id| categorias.iter().find(|c| c.id == id))
         .map(|c| c.name.clone())
         .unwrap_or_else(|| "Sin categoría".to_string())
+}
+
+/// Las cuentas son personales: el formulario de suscripción solo puede
+/// asignar una cuenta propia (el backend lo exige igual, esto solo
+/// evita ofrecer opciones que el servidor rechazaría).
+fn cuentas_propias(cuentas: &[accounts::Cuenta], mi_id: Option<Uuid>) -> Vec<accounts::Cuenta> {
+    cuentas
+        .iter()
+        .filter(|c| Some(c.owner_id) == mi_id)
+        .cloned()
+        .collect()
 }
 
 #[derive(Clone)]
@@ -29,7 +41,9 @@ enum ModoFormulario {
 #[component]
 pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
+    let workspace = use_workspace();
     let modo = RwSignal::new(ModoFormulario::Cerrado);
+    let mi_id = move || auth.usuario().map(|u| u.id);
 
     let categorias = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
@@ -80,7 +94,7 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
                     <FormularioSuscripcion
                         workspace_id=workspace_id
                         categorias=categorias.get().unwrap_or_default()
-                        cuentas=cuentas.get().unwrap_or_default()
+                        cuentas=cuentas_propias(&cuentas.get().unwrap_or_default(), mi_id())
                         suscripcion_existente=None
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); suscripciones.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
@@ -91,7 +105,7 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
                     <FormularioSuscripcion
                         workspace_id=workspace_id
                         categorias=categorias.get().unwrap_or_default()
-                        cuentas=cuentas.get().unwrap_or_default()
+                        cuentas=cuentas_propias(&cuentas.get().unwrap_or_default(), mi_id())
                         suscripcion_existente=Some(s)
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); suscripciones.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
@@ -105,19 +119,44 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
                 match suscripciones.get() {
                     None => view! { <p class="text-soft">"Cargando suscripciones..."</p> }.into_any(),
                     Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
-                    Some(Ok(lista)) if lista.is_empty() => {
-                        view! { <p class="text-soft">"Todavía no hay suscripciones."</p> }.into_any()
+                    Some(Ok(lista)) => {
+                        let (propias, ajenas): (Vec<_>, Vec<_>) = lista
+                            .into_iter()
+                            .partition(|s| Some(s.owner_id) == mi_id());
+                        let hay_ajenas = !ajenas.is_empty();
+                        let categorias_ajenas = categorias_ok.clone();
+                        view! {
+                            {if propias.is_empty() {
+                                view! { <p class="text-soft">"Todavía no tienes suscripciones."</p> }.into_any()
+                            } else {
+                                view! {
+                                    <TablaSuscripciones
+                                        workspace_id=workspace_id
+                                        lista=propias
+                                        categorias=categorias_ok
+                                        editable=true
+                                        on_editar=move |s| modo.set(ModoFormulario::Editar(s))
+                                        on_cambio=move || suscripciones.refetch()
+                                    />
+                                }
+                                .into_any()
+                            }}
+                            <Show when=move || workspace.puede_supervisar() && hay_ajenas>
+                                <h3 class="text-soft" style="margin:24px 0 12px; font-size:13px; font-weight:600;">
+                                    "Suscripciones de otros miembros (supervisión)"
+                                </h3>
+                                <TablaSuscripciones
+                                    workspace_id=workspace_id
+                                    lista=ajenas.clone()
+                                    categorias=categorias_ajenas.clone()
+                                    editable=false
+                                    on_editar=move |s| modo.set(ModoFormulario::Editar(s))
+                                    on_cambio=move || suscripciones.refetch()
+                                />
+                            </Show>
+                        }
+                        .into_any()
                     }
-                    Some(Ok(lista)) => view! {
-                        <TablaSuscripciones
-                            workspace_id=workspace_id
-                            lista=lista
-                            categorias=categorias_ok
-                            on_editar=move |s| modo.set(ModoFormulario::Editar(s))
-                            on_cambio=move || suscripciones.refetch()
-                        />
-                    }
-                    .into_any(),
                 }
             }}
         </section>
@@ -127,6 +166,7 @@ pub fn PestanaSuscripciones(workspace_id: Uuid) -> impl IntoView {
 #[component]
 fn MenuSuscripcion<FE, FC, FT>(
     activa: bool,
+    editable: bool,
     on_editar: FE,
     on_cobrada: FC,
     on_activar: FT,
@@ -152,21 +192,23 @@ where
             <Show when=move || abierto.get()>
                 <Portal>
                     <div class="menu-dropdown" style=move || estilo_posicion(posicion) on:mouseleave=move |_| abierto.set(false)>
-                        <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_editar(); }>
-                            "Editar"
-                        </button>
-                        <Show when=move || activa>
-                            <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_cobrada(); }>
-                                "Marcar cobrada"
+                        <Show when=move || editable>
+                            <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_editar(); }>
+                                "Editar"
+                            </button>
+                            <Show when=move || activa>
+                                <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_cobrada(); }>
+                                    "Marcar cobrada"
+                                </button>
+                            </Show>
+                            <button
+                                type="button"
+                                class=if activa { "menu-item is-danger" } else { "menu-item" }
+                                on:click=move |_| { abierto.set(false); on_activar(); }
+                            >
+                                {if activa { "Desactivar" } else { "Activar" }}
                             </button>
                         </Show>
-                        <button
-                            type="button"
-                            class=if activa { "menu-item is-danger" } else { "menu-item" }
-                            on:click=move |_| { abierto.set(false); on_activar(); }
-                        >
-                            {if activa { "Desactivar" } else { "Activar" }}
-                        </button>
                     </div>
                 </Portal>
             </Show>
@@ -179,6 +221,7 @@ fn TablaSuscripciones<FE, FA>(
     workspace_id: Uuid,
     lista: Vec<agenda::Suscripcion>,
     categorias: Vec<accounting::Categoria>,
+    editable: bool,
     on_editar: FE,
     on_cambio: FA,
 ) -> impl IntoView
@@ -247,6 +290,7 @@ where
                                     <td>
                                         <MenuSuscripcion
                                             activa=activa
+                                            editable=editable
                                             on_editar=move || on_editar(guardada.get_value())
                                             on_cobrada=move || marcar_cobrada(id)
                                             on_activar=move || alternar_activa(guardada.get_value())

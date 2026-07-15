@@ -10,6 +10,17 @@ use uuid::Uuid;
 use crate::api::admin::{self, InvitacionCreada};
 use crate::auth::{token_vigente, use_auth};
 
+/// Arma el link completo que se le comparte al invitado a partir del
+/// token plano que el backend solo devuelve una vez. `origin()` puede
+/// fallar en teorías raras (iframes sandboxeados); si pasa, se muestra
+/// solo el path — mejor que nada.
+fn link_invitacion(token: &str) -> String {
+    let origen = web_sys::window()
+        .and_then(|w| w.location().origin().ok())
+        .unwrap_or_default();
+    format!("{origen}/invitaciones/aceptar?token={token}")
+}
+
 #[component]
 pub fn PestanaInvitaciones() -> impl IntoView {
     let auth = use_auth();
@@ -33,11 +44,17 @@ pub fn PestanaInvitaciones() -> impl IntoView {
             <Show when=move || invitacion_creada.get().is_some()>
                 <div class="banner" style="margin-bottom:16px;">
                     <p style="margin:0 0 6px;">
-                        "Invitación generada — copia el token ahora, no se volverá a mostrar:"
+                        "Invitación generada — copia el link ahora, no se volverá a mostrar:"
                     </p>
-                    <p class="mono" style="margin:0; font-weight:700; word-break:break-all;">
-                        {move || invitacion_creada.get().map(|i| i.token).unwrap_or_default()}
-                    </p>
+                    <input
+                        type="text"
+                        readonly
+                        class="mono"
+                        style="width:100%; margin:0; font-weight:700;"
+                        prop:value=move || {
+                            invitacion_creada.get().map(|i| link_invitacion(&i.token)).unwrap_or_default()
+                        }
+                    />
                     <p class="text-faint" style="margin:6px 0 0; font-size:12px;">
                         "Expira: "
                         {move || {

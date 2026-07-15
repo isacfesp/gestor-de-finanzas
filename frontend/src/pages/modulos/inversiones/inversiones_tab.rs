@@ -14,6 +14,7 @@ use super::util::{confirmar, hoy};
 use crate::api::investments::{self, Inversion};
 use crate::auth::{token_vigente, use_auth};
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
+use crate::workspace::use_workspace;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EstadoInversion {
@@ -54,9 +55,11 @@ enum Vista {
 #[component]
 pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
+    let workspace = use_workspace();
     let mostrar_form = RwSignal::new(false);
     let vista = RwSignal::new(Vista::Lista);
     let filtro_estado = RwSignal::new(String::new());
+    let mi_id = move || auth.usuario().map(|u| u.id);
 
     let inversiones = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
@@ -129,13 +132,37 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
                                 if filtradas.is_empty() {
                                     view! { <p class="text-soft">"No hay inversiones con este filtro."</p> }.into_any()
                                 } else {
+                                    let (propias, ajenas): (Vec<_>, Vec<_>) = filtradas
+                                        .into_iter()
+                                        .partition(|inv| Some(inv.owner_id) == mi_id());
+                                    let hay_ajenas = !ajenas.is_empty();
                                     view! {
-                                        <TablaInversiones
-                                            workspace_id=workspace_id
-                                            lista=filtradas
-                                            on_ver=move |inv| vista.set(Vista::Detalle(inv))
-                                            on_cambio=move || inversiones.refetch()
-                                        />
+                                        {if propias.is_empty() {
+                                            view! { <p class="text-soft">"Todavía no tienes inversiones propias."</p> }.into_any()
+                                        } else {
+                                            view! {
+                                                <TablaInversiones
+                                                    workspace_id=workspace_id
+                                                    lista=propias
+                                                    editable=true
+                                                    on_ver=move |inv| vista.set(Vista::Detalle(inv))
+                                                    on_cambio=move || inversiones.refetch()
+                                                />
+                                            }
+                                            .into_any()
+                                        }}
+                                        <Show when=move || workspace.puede_supervisar() && hay_ajenas>
+                                            <h3 class="text-soft" style="margin:24px 0 12px; font-size:13px; font-weight:600;">
+                                                "Inversiones de otros miembros (supervisión)"
+                                            </h3>
+                                            <TablaInversiones
+                                                workspace_id=workspace_id
+                                                lista=ajenas.clone()
+                                                editable=false
+                                                on_ver=move |inv| vista.set(Vista::Detalle(inv))
+                                                on_cambio=move || inversiones.refetch()
+                                            />
+                                        </Show>
                                     }
                                     .into_any()
                                 }
@@ -150,7 +177,7 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
 }
 
 #[component]
-fn MenuInversion<FV, FB>(on_ver: FV, on_borrar: FB) -> impl IntoView
+fn MenuInversion<FV, FB>(editable: bool, on_ver: FV, on_borrar: FB) -> impl IntoView
 where
     FV: Fn() + 'static + Copy + Send + Sync,
     FB: Fn() + 'static + Copy + Send + Sync,
@@ -174,9 +201,11 @@ where
                         <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_ver(); }>
                             "Ver detalle"
                         </button>
-                        <button type="button" class="menu-item is-danger" on:click=move |_| { abierto.set(false); on_borrar(); }>
-                            "Eliminar"
-                        </button>
+                        <Show when=move || editable>
+                            <button type="button" class="menu-item is-danger" on:click=move |_| { abierto.set(false); on_borrar(); }>
+                                "Eliminar"
+                            </button>
+                        </Show>
                     </div>
                 </Portal>
             </Show>
@@ -188,6 +217,7 @@ where
 fn TablaInversiones<FV, FA>(
     workspace_id: Uuid,
     lista: Vec<Inversion>,
+    editable: bool,
     on_ver: FV,
     on_cambio: FA,
 ) -> impl IntoView
@@ -230,6 +260,7 @@ where
                                     <td style=format!("color:{color};")>{etiqueta}</td>
                                     <td>
                                         <MenuInversion
+                                            editable=editable
                                             on_ver=move || on_ver(guardada.get_value())
                                             on_borrar=move || {
                                                 if !confirmar("¿Eliminar esta inversión? Se borrará también su historial de rendimientos.") {
@@ -386,6 +417,7 @@ where
 {
     let auth = use_auth();
     let id = inversion.id;
+    let editable = Some(inversion.owner_id) == auth.usuario().map(|u| u.id);
     let mostrar_form_rendimiento = RwSignal::new(false);
 
     let proyeccion = LocalResource::new(move || async move {
@@ -411,23 +443,25 @@ where
             <div class="panel-head">
                 <button class="btn-ghost" on:click=move |_| on_volver()>"← Volver"</button>
                 <h2>{inversion.name.clone()}</h2>
-                <button
-                    class="btn-ghost"
-                    style="color:var(--negative);"
-                    on:click=move |_| {
-                        if !confirmar("¿Eliminar esta inversión? Se borrará también su historial de rendimientos.") {
-                            return;
-                        }
-                        leptos::task::spawn_local(async move {
-                            if let Some(token) = token_vigente(auth).await {
-                                let _ = investments::eliminar_inversion(workspace_id, id, &token).await;
-                                on_volver();
+                {editable.then(|| view! {
+                    <button
+                        class="btn-ghost"
+                        style="color:var(--negative);"
+                        on:click=move |_| {
+                            if !confirmar("¿Eliminar esta inversión? Se borrará también su historial de rendimientos.") {
+                                return;
                             }
-                        });
-                    }
-                >
-                    "Eliminar inversión"
-                </button>
+                            leptos::task::spawn_local(async move {
+                                if let Some(token) = token_vigente(auth).await {
+                                    let _ = investments::eliminar_inversion(workspace_id, id, &token).await;
+                                    on_volver();
+                                }
+                            });
+                        }
+                    >
+                        "Eliminar inversión"
+                    </button>
+                })}
             </div>
 
             {move || match proyeccion.get() {
@@ -439,16 +473,18 @@ where
             <div class="panel" style="margin-top:16px;">
                 <div class="panel-head">
                     <h3>"Rendimientos acreditados"</h3>
-                    <button
-                        class="btn btn-primary"
-                        style="padding:8px 15px; font-size:12.5px;"
-                        on:click=move |_| mostrar_form_rendimiento.set(true)
-                    >
-                        "+ Registrar rendimiento"
-                    </button>
+                    {editable.then(|| view! {
+                        <button
+                            class="btn btn-primary"
+                            style="padding:8px 15px; font-size:12.5px;"
+                            on:click=move |_| mostrar_form_rendimiento.set(true)
+                        >
+                            "+ Registrar rendimiento"
+                        </button>
+                    })}
                 </div>
 
-                <Show when=move || mostrar_form_rendimiento.get()>
+                <Show when=move || editable && mostrar_form_rendimiento.get()>
                     <FormularioRendimiento
                         workspace_id=workspace_id
                         investment_id=id

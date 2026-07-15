@@ -141,8 +141,27 @@ pub fn ProtectedShell() -> impl IntoView {
 
                 <div class="flex min-w-0 flex-1 flex-col">
                     <header class="sticky top-0 z-20 flex items-center gap-4 border-b border-line px-4 pb-4 pt-[calc(16px+env(safe-area-inset-top))] md:px-[30px] md:pb-[18px] md:pt-[calc(18px+env(safe-area-inset-top))]">
-                        <Show when=move || workspace.nombre().is_some()>
-                            <span class="font-mono text-[11px] font-semibold text-faint">{move || workspace.nombre().unwrap_or_default()}</span>
+                        <Show
+                            when=move || (workspace.lista().len() > 1)
+                            fallback=move || view! {
+                                <Show when=move || workspace.nombre().is_some()>
+                                    <span class="font-mono text-[11px] font-semibold text-faint">{move || workspace.nombre().unwrap_or_default()}</span>
+                                </Show>
+                            }
+                        >
+                            <select
+                                class="font-mono text-[11px] font-semibold text-faint bg-transparent border border-card-line rounded-sm px-2 py-1"
+                                prop:value=move || workspace.id().map(|id| id.to_string()).unwrap_or_default()
+                                on:change=move |ev| {
+                                    if let Ok(id) = event_target_value(&ev).parse() {
+                                        workspace.cambiar(id);
+                                    }
+                                }
+                            >
+                                {move || workspace.lista().into_iter().map(|w| view! {
+                                    <option value=w.id.to_string()>{w.name}</option>
+                                }).collect_view()}
+                            </select>
                         </Show>
                         <button class="app-icon-btn" title="Cambiar tema" on:click=move |_| tema.alternar()>
                             {move || match tema.actual() {

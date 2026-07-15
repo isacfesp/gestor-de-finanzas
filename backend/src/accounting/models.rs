@@ -52,6 +52,34 @@ pub struct Transaccion {
     pub created_at: DateTime<Utc>,
 }
 
+/// Fila de listado: igual que `Transaccion` pero con el nombre de
+/// quién la registró (JOIN con `users`, mismo patrón que
+/// `goals::Aporte`) y el nombre/tipo de la cuenta (JOIN con
+/// `accounts`) — desde que las cuentas son personales
+/// (`accounts::Cuenta::owner_id`), un miembro solo recibe SUS propias
+/// cuentas de `GET .../cuentas`, así que ya no puede resolver el
+/// nombre de una cuenta ajena cruzando esa lista en el frontend; el
+/// listado de movimientos, que sigue siendo de todo el workspace, debe
+/// traer el nombre ya resuelto. Vive aparte de `Transaccion` porque
+/// crear/editar no necesitan estos JOIN.
+#[derive(Debug, Serialize)]
+pub struct TransaccionListado {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    #[serde(rename = "type")]
+    pub tipo: String,
+    pub amount: Decimal,
+    pub date: NaiveDate,
+    pub category_id: Option<Uuid>,
+    pub account_id: Uuid,
+    pub account_name: String,
+    pub account_tipo: String,
+    pub description: Option<String>,
+    pub created_by: Uuid,
+    pub created_by_name: String,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Se usa tanto para crear como para reemplazar una transacción
 /// existente (PUT): en ambos casos se exigen todos los campos.
 #[derive(Debug, Deserialize)]
@@ -83,6 +111,8 @@ pub struct FiltrosTransacciones {
 pub struct Suscripcion {
     pub id: Uuid,
     pub workspace_id: Uuid,
+    /// Dueño individual: solo él la crea/edita/marca cobrada/elimina.
+    pub owner_id: Uuid,
     pub name: String,
     pub amount: Decimal,
     pub category_id: Option<Uuid>,
@@ -134,6 +164,9 @@ pub struct FiltroProximosCobros {
 pub struct Presupuesto {
     pub id: Uuid,
     pub workspace_id: Uuid,
+    /// Dueño individual: cada usuario tiene su propio límite por
+    /// categoría/mes (la categoría en sí sigue siendo compartida).
+    pub owner_id: Uuid,
     pub category_id: Uuid,
     pub month: NaiveDate,
     pub limit_amount: Decimal,
@@ -155,6 +188,7 @@ pub struct FiltroMes {
 #[derive(Debug, Serialize)]
 pub struct EstadoPresupuesto {
     pub id: Uuid,
+    pub owner_id: Uuid,
     pub category_id: Uuid,
     pub category_name: String,
     pub month: NaiveDate,

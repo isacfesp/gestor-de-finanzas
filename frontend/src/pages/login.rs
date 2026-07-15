@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
-use leptos_router::hooks::use_navigate;
+use leptos_router::hooks::{use_navigate, use_query_map};
 
 use crate::auth::{iniciar_sesion, use_auth};
 
@@ -54,6 +54,11 @@ pub fn Login() -> impl IntoView {
     // no hay "recordar sesión" persistente implementado en el backend.
     let recordar = RwSignal::new(true);
 
+    // `?invitado=1` lo agrega el redirect de AceptarInvitacion al
+    // canjear una invitación con éxito, para mostrar el aviso de abajo.
+    let query = use_query_map();
+    let viene_de_invitacion = move || query.with(|q| q.get("invitado").is_some());
+
     // new_unsync: los futures que llaman a `fetch` desde el navegador no
     // son Send (WASM es de un solo hilo), así que se usa la variante de
     // Action que no lo exige en vez de Action::new.
@@ -91,6 +96,10 @@ pub fn Login() -> impl IntoView {
 
                     <h1>"Bienvenido de vuelta"</h1>
                     <p class="auth-subtitle text-soft">"Ingresa a tu cuenta para seguir controlando tus finanzas."</p>
+
+                    <Show when=viene_de_invitacion>
+                        <p class="banner">"Cuenta creada, ya puedes iniciar sesión."</p>
+                    </Show>
 
                     <form on:submit=move |ev| {
                         ev.prevent_default();

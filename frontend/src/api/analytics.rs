@@ -34,64 +34,105 @@ pub struct TasaAhorro {
     pub percentage: Decimal,
 }
 
-/// GET /workspaces/:workspace_id/analytics/flujo-caja?desde=&hasta=
+/// Dinero nuevo aportado a metas en el rango (aportes − retiros), en
+/// monto absoluto — a diferencia de `TasaAhorro`, que es un %.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AhorroNeto {
+    pub aportado: Decimal,
+    pub retirado: Decimal,
+    pub neto: Decimal,
+}
+
+/// GET /workspaces/:workspace_id/analytics/flujo-caja?desde=&hasta=&user_id=
+///
+/// `user_id` solo tiene efecto si quien pregunta es un dev global —
+/// cualquier otro usuario recibe sus propias métricas sin importar lo
+/// que mande aquí (lo decide el backend, ver
+/// `analytics::comun::resolver_filtro_usuario`). `None` desde un dev
+/// significa "todo el workspace".
 pub async fn flujo_caja(
     workspace_id: Uuid,
     desde: Option<NaiveDate>,
     hasta: Option<NaiveDate>,
+    user_id: Option<Uuid>,
     token: &str,
 ) -> Result<FlujoCaja, ApiError> {
-    let ruta = format!(
+    let mut ruta = format!(
         "/workspaces/{workspace_id}/analytics/flujo-caja{}",
         query_periodo(desde, hasta)
     );
+    agregar_param(&mut ruta, "user_id", user_id);
     client::get(&ruta, token).await
 }
 
-/// GET /workspaces/:workspace_id/analytics/tasa-ahorro?month=YYYY-MM-DD
+/// GET /workspaces/:workspace_id/analytics/tasa-ahorro?month=YYYY-MM-DD&user_id=
 pub async fn tasa_ahorro(
     workspace_id: Uuid,
     month: Option<NaiveDate>,
+    user_id: Option<Uuid>,
     token: &str,
 ) -> Result<TasaAhorro, ApiError> {
-    let ruta = match month {
+    let mut ruta = match month {
         Some(m) => format!("/workspaces/{workspace_id}/analytics/tasa-ahorro?month={m}"),
         None => format!("/workspaces/{workspace_id}/analytics/tasa-ahorro"),
     };
+    agregar_param(&mut ruta, "user_id", user_id);
     client::get(&ruta, token).await
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/tendencia?meses=&tema=
+/// GET /workspaces/:workspace_id/analytics/ahorro-neto?desde=&hasta=&user_id=
+pub async fn ahorro_neto(
+    workspace_id: Uuid,
+    desde: Option<NaiveDate>,
+    hasta: Option<NaiveDate>,
+    user_id: Option<Uuid>,
+    token: &str,
+) -> Result<AhorroNeto, ApiError> {
+    let mut ruta = format!(
+        "/workspaces/{workspace_id}/analytics/ahorro-neto{}",
+        query_periodo(desde, hasta)
+    );
+    agregar_param(&mut ruta, "user_id", user_id);
+    client::get(&ruta, token).await
+}
+
+/// GET /workspaces/:workspace_id/analytics/charts/tendencia?tema=&user_id=&granularidad=
 ///
 /// `tema` es "dark"/"light" (`theme::Tema::como_texto()`) — el SVG se
 /// arma con esa paleta en el servidor, así que hay que volver a
-/// pedirlo si el usuario alterna el tema.
+/// pedirlo si el usuario alterna el tema. `granularidad` fija tanto el
+/// rango como la agrupación: "semana" (semana en curso, día por día),
+/// "mes" (mes en curso, semana por semana, por defecto si se omite) o
+/// "año" (últimos 12 meses, mes por mes).
 pub async fn tendencia_svg(
     workspace_id: Uuid,
-    meses: Option<i64>,
     tema: &str,
+    user_id: Option<Uuid>,
+    granularidad: &str,
     token: &str,
 ) -> Result<String, ApiError> {
-    let mut ruta = format!("/workspaces/{workspace_id}/analytics/charts/tendencia?tema={tema}");
-    if let Some(meses) = meses {
-        ruta.push_str(&format!("&meses={meses}"));
-    }
+    let mut ruta = format!(
+        "/workspaces/{workspace_id}/analytics/charts/tendencia?tema={tema}&granularidad={granularidad}"
+    );
+    agregar_param(&mut ruta, "user_id", user_id);
     client::get::<GraficoSvg>(&ruta, token).await.map(|g| g.svg)
 }
 
-/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&tema=
+/// GET /workspaces/:workspace_id/analytics/charts/flujo-pastel?desde=&hasta=&tema=&user_id=
 pub async fn flujo_pastel_svg(
     workspace_id: Uuid,
     desde: Option<NaiveDate>,
     hasta: Option<NaiveDate>,
     tema: &str,
+    user_id: Option<Uuid>,
     token: &str,
 ) -> Result<String, ApiError> {
     let base = query_periodo(desde, hasta);
     let separador = if base.is_empty() { '?' } else { '&' };
-    let ruta = format!(
+    let mut ruta = format!(
         "/workspaces/{workspace_id}/analytics/charts/flujo-pastel{base}{separador}tema={tema}"
     );
+    agregar_param(&mut ruta, "user_id", user_id);
     client::get::<GraficoSvg>(&ruta, token).await.map(|g| g.svg)
 }
 
@@ -107,5 +148,14 @@ fn query_periodo(desde: Option<NaiveDate>, hasta: Option<NaiveDate>) -> String {
         String::new()
     } else {
         format!("?{}", partes.join("&"))
+    }
+}
+
+/// Anexa `&nombre=valor` (o `?` si `ruta` todavía no tiene query
+/// string) cuando `valor` es `Some` — no hace nada si es `None`.
+fn agregar_param(ruta: &mut String, nombre: &str, valor: Option<Uuid>) {
+    if let Some(valor) = valor {
+        let separador = if ruta.contains('?') { '&' } else { '?' };
+        ruta.push_str(&format!("{separador}{nombre}={valor}"));
     }
 }

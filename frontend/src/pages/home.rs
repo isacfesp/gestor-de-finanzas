@@ -13,6 +13,7 @@ mod accesos_rapidos;
 mod auditoria_rapida;
 mod distribucion;
 mod kpis;
+mod selector_alcance;
 mod tasa_ahorro;
 mod tendencia;
 mod util;
@@ -21,6 +22,7 @@ use accesos_rapidos::AccesosRapidos;
 use auditoria_rapida::AuditoriaRapida;
 use distribucion::Distribucion;
 use kpis::Kpis;
+use selector_alcance::SelectorAlcance;
 use tasa_ahorro::TasaAhorro;
 use tendencia::Tendencia;
 
@@ -35,6 +37,10 @@ pub fn Home() -> impl IntoView {
     // mes en curso (ver TasaAhorro).
     let desde = RwSignal::new(String::new());
     let hasta = RwSignal::new(String::new());
+    // Solo un dev global puede pedir métricas de otro usuario o del
+    // workspace completo; para cualquier otro se ignora en el backend
+    // y este signal nunca se toca (ver `SelectorAlcance`).
+    let alcance = RwSignal::new(None::<Uuid>);
 
     view! {
         <section class="panel" style="padding: 22px 20px;">
@@ -66,12 +72,17 @@ pub fn Home() -> impl IntoView {
                 }
             }
         >
+            <Show when=move || auth.es_dev()>
+                <div style="margin-top:16px;">
+                    <SelectorAlcance workspace_id=workspace.id().unwrap_or(Uuid::nil()) alcance=alcance/>
+                </div>
+            </Show>
             <div style="margin-top:16px;">
-                <Kpis workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta/>
+                <Kpis workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta alcance=alcance/>
             </div>
-            <TasaAhorro workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
-            <Tendencia workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
-            <Distribucion workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta/>
+            <TasaAhorro workspace_id=workspace.id().unwrap_or(Uuid::nil()) alcance=alcance/>
+            <Tendencia workspace_id=workspace.id().unwrap_or(Uuid::nil()) alcance=alcance/>
+            <Distribucion workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta alcance=alcance/>
             <AccesosRapidos workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             <AuditoriaRapida workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
         </Show>

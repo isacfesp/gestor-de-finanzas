@@ -16,9 +16,11 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::accounts::models::{CrearTransferenciaDatos, FiltrosTransferencias, Transferencia};
+use crate::accounts::models::{
+    CrearTransferenciaDatos, FiltrosTransferencias, Transferencia, TransferenciaListado,
+};
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
@@ -131,28 +133,38 @@ pub async fn crear(
 }
 
 /// GET /workspaces/:workspace_id/transferencias — con filtros opcionales.
+///
+/// Un `member` solo ve las transferencias donde alguna de sus cuentas
+/// participa (origen o destino); un `admin`/dev ve todas (supervisión).
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtros): Query<FiltrosTransferencias>,
-) -> Result<Json<Vec<Transferencia>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+) -> Result<Json<Vec<TransferenciaListado>>, AppError> {
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let filas = sqlx::query_as!(
-        Transferencia,
-        r#"SELECT id, workspace_id, from_account_id, to_account_id, amount, date,
-                  description, created_by, created_at
-           FROM transfers
-           WHERE workspace_id = $1
-             AND ($2::date IS NULL OR date >= $2)
-             AND ($3::date IS NULL OR date <= $3)
-             AND ($4::uuid IS NULL OR from_account_id = $4 OR to_account_id = $4)
-           ORDER BY date DESC, created_at DESC"#,
+        TransferenciaListado,
+        r#"SELECT t.id, t.workspace_id,
+                  t.from_account_id, origen.name AS from_account_name,
+                  t.to_account_id, destino.name AS to_account_name,
+                  t.amount, t.date, t.description, t.created_by, t.created_at
+           FROM transfers t
+           JOIN accounts origen ON origen.id = t.from_account_id
+           JOIN accounts destino ON destino.id = t.to_account_id
+           WHERE t.workspace_id = $1
+             AND ($2::date IS NULL OR t.date >= $2)
+             AND ($3::date IS NULL OR t.date <= $3)
+             AND ($4::uuid IS NULL OR t.from_account_id = $4 OR t.to_account_id = $4)
+             AND ($5::uuid IS NULL OR origen.owner_id = $5 OR destino.owner_id = $5)
+           ORDER BY t.date DESC, t.created_at DESC"#,
         workspace_id,
         filtros.desde,
         filtros.hasta,
-        filtros.account_id
+        filtros.account_id,
+        solo_propias
     )
     .fetch_all(&pool)
     .await?;

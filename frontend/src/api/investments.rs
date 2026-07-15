@@ -33,6 +33,8 @@ pub fn etiqueta_tipo_interes(valor: &str) -> &'static str {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Inversion {
     pub id: Uuid,
+    /// Dueño individual: solo él la edita/elimina/registra rendimientos.
+    pub owner_id: Uuid,
     pub name: String,
     pub principal: Decimal,
     pub gat_annual_rate: Decimal,

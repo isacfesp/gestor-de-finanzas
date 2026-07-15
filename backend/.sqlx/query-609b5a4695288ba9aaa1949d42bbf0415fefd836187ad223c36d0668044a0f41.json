@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT w.id, w.name, m.role AS \"role!\"\n               FROM workspaces w\n               JOIN workspace_members m ON m.workspace_id = w.id\n               WHERE m.user_id = $1\n               ORDER BY w.name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "role!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "609b5a4695288ba9aaa1949d42bbf0415fefd836187ad223c36d0668044a0f41"
+}

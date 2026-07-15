@@ -78,17 +78,13 @@ impl Operacion {
     }
 }
 
-/// Deriva la operación de una transacción ya guardada, para preseleccionar
-/// el formulario al editar (Ahorro no es un campo en la base, se infiere
-/// del tipo de cuenta).
-fn operacion_de(t: &accounting::Transaccion, cuentas: &[accounts::Cuenta]) -> Operacion {
-    if t.tipo == "expense" {
-        return Operacion::Gasto;
-    }
-    let es_ahorro = cuentas
-        .iter()
-        .any(|c| c.id == t.account_id && c.tipo == "savings");
-    if es_ahorro {
+/// Deriva la operación a partir del tipo de transacción y si su cuenta
+/// es de ahorro (Ahorro no es un campo en la base: se infiere del tipo
+/// de cuenta, ver comentario del módulo).
+fn operacion_de(tipo: &str, es_ahorro: bool) -> Operacion {
+    if tipo == "expense" {
+        Operacion::Gasto
+    } else if es_ahorro {
         Operacion::Ahorro
     } else {
         Operacion::Ingreso
@@ -103,19 +99,16 @@ fn cuentas_para(op: Operacion, cuentas: &[accounts::Cuenta]) -> Vec<accounts::Cu
         .collect()
 }
 
-fn nombre_cuenta(cuentas: &[accounts::Cuenta], id: Uuid) -> String {
+/// Las cuentas son personales: el formulario de operaciones (crear o
+/// editar una transacción) solo puede operar sobre las del usuario
+/// actual, aunque `cuentas` traiga también las ajenas (un admin/dev
+/// las recibe para supervisión, ver `cuentas_tab.rs`).
+fn cuentas_operables(cuentas: &[accounts::Cuenta], mi_id: Option<Uuid>) -> Vec<accounts::Cuenta> {
     cuentas
         .iter()
-        .find(|c| c.id == id)
-        .map(|c| c.name.clone())
-        .unwrap_or_else(|| "Cuenta eliminada".to_string())
-}
-
-/// A diferencia de `nombre_cuenta`, no tiene valor por defecto: una
-/// transferencia mezcla dos cuentas (origen/destino) y ahí no tiene
-/// sentido un solo ícono, así que esas filas quedan sin `tipo_cuenta`.
-fn tipo_cuenta(cuentas: &[accounts::Cuenta], id: Uuid) -> Option<String> {
-    cuentas.iter().find(|c| c.id == id).map(|c| c.tipo.clone())
+        .filter(|c| Some(c.owner_id) == mi_id)
+        .cloned()
+        .collect()
 }
 
 fn nombre_categoria(categorias: &[accounting::Categoria], id: Option<Uuid>) -> String {
@@ -150,19 +143,19 @@ struct FilaVista {
     tipo_cuenta: Option<String>,
     monto_texto: String,
     color: &'static str,
+    quien: String,
     editable: Option<accounting::Transaccion>,
 }
 
 fn construir_filas(
-    transacciones: &[accounting::Transaccion],
+    transacciones: &[accounting::TransaccionListado],
     transferencias: &[accounts::Transferencia],
-    cuentas: &[accounts::Cuenta],
     categorias: &[accounting::Categoria],
 ) -> Vec<FilaVista> {
     let mut filas = Vec::with_capacity(transacciones.len() + transferencias.len());
 
     for t in transacciones {
-        let op = operacion_de(t, cuentas);
+        let op = operacion_de(&t.tipo, t.account_tipo == "savings");
         let signo = if t.tipo == "income" { "+" } else { "-" };
         let color = if t.tipo == "income" {
             "var(--positive)"
@@ -174,11 +167,12 @@ fn construir_filas(
             tipo_label: op.como_texto(),
             descripcion: t.description.clone().unwrap_or_else(|| "—".to_string()),
             categoria: nombre_categoria(categorias, t.category_id),
-            cuenta: nombre_cuenta(cuentas, t.account_id),
-            tipo_cuenta: tipo_cuenta(cuentas, t.account_id),
+            cuenta: t.account_name.clone(),
+            tipo_cuenta: Some(t.account_tipo.clone()),
             monto_texto: format!("{signo}{:.2}", t.amount),
             color,
-            editable: Some(t.clone()),
+            quien: t.created_by_name.clone(),
+            editable: Some(t.clone().into()),
         });
     }
 
@@ -188,14 +182,13 @@ fn construir_filas(
             tipo_label: "Transferencia",
             descripcion: tr.description.clone().unwrap_or_else(|| "—".to_string()),
             categoria: "—".to_string(),
-            cuenta: format!(
-                "{} → {}",
-                nombre_cuenta(cuentas, tr.from_account_id),
-                nombre_cuenta(cuentas, tr.to_account_id)
-            ),
+            cuenta: format!("{} → {}", tr.from_account_name, tr.to_account_name),
             tipo_cuenta: None,
             monto_texto: format!("{:.2}", tr.amount),
             color: "var(--text)",
+            // Transferencia no expone quién la creó en esta pasada
+            // (fuera de alcance, ver plan de "cuentas personales").
+            quien: "—".to_string(),
             editable: None,
         });
     }
@@ -214,6 +207,7 @@ enum ModoFormulario {
 #[component]
 pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
+    let mi_id = move || auth.usuario().map(|u| u.id);
     let modo = RwSignal::new(ModoFormulario::Cerrado);
 
     let filtro_operacion = RwSignal::new(String::new());
@@ -322,7 +316,7 @@ pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
                 ModoFormulario::Crear => view! {
                     <FormularioOperacion
                         workspace_id=workspace_id
-                        cuentas=cuentas.get().unwrap_or_default()
+                        cuentas=cuentas_operables(&cuentas.get().unwrap_or_default(), mi_id())
                         categorias=categorias.get().unwrap_or_default()
                         transaccion_existente=None
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); recargar_todo(); }
@@ -333,7 +327,7 @@ pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
                 ModoFormulario::Editar(t) => view! {
                     <FormularioOperacion
                         workspace_id=workspace_id
-                        cuentas=cuentas.get().unwrap_or_default()
+                        cuentas=cuentas_operables(&cuentas.get().unwrap_or_default(), mi_id())
                         categorias=categorias.get().unwrap_or_default()
                         transaccion_existente=Some(t)
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); recargar_todo(); }
@@ -344,7 +338,6 @@ pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
             }}
 
             {move || {
-                let cuentas_ok = cuentas.get().unwrap_or_default();
                 let categorias_ok = categorias.get().unwrap_or_default();
                 match (transacciones.get(), transferencias.get()) {
                     (Some(Err(mensaje)), _) | (_, Some(Err(mensaje))) => {
@@ -352,7 +345,7 @@ pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
                     }
                     (Some(Ok(ts)), Some(Ok(trs))) => {
                         let filtro = filtro_operacion.get();
-                        let mut filas = construir_filas(&ts, &trs, &cuentas_ok, &categorias_ok);
+                        let mut filas = construir_filas(&ts, &trs, &categorias_ok);
                         if !filtro.is_empty() {
                             filas.retain(|f| f.tipo_label == filtro);
                         }
@@ -461,6 +454,7 @@ where
                         <th>"Descripción"</th>
                         <th>"Categoría"</th>
                         <th>"Cuenta"</th>
+                        <th>"Quién"</th>
                         <th>"Monto"</th>
                         <th></th>
                     </tr>
@@ -482,6 +476,7 @@ where
                                             <span>{fila.cuenta}</span>
                                         </span>
                                     </td>
+                                    <td>{fila.quien}</td>
                                     <td class="num" style=format!("color:{};", fila.color)>{fila.monto_texto}</td>
                                     <td>
                                         {para_editar
@@ -538,7 +533,12 @@ where
 
     let operacion_inicial = transaccion_existente
         .as_ref()
-        .map(|t| operacion_de(t, &cuentas))
+        .map(|t| {
+            let es_ahorro = cuentas
+                .iter()
+                .any(|c| c.id == t.account_id && c.tipo == "savings");
+            operacion_de(&t.tipo, es_ahorro)
+        })
         .unwrap_or(Operacion::Gasto);
     let cuenta_id_inicial = transaccion_existente
         .as_ref()

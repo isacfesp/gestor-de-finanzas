@@ -17,6 +17,10 @@ use super::error::ApiError;
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cuenta {
     pub id: Uuid,
+    /// Dueño individual de la cuenta: solo él puede operarla. Se usa
+    /// para separar "mis cuentas" de las que solo se ven en modo
+    /// supervisión (admin/dev).
+    pub owner_id: Uuid,
     pub name: String,
     #[serde(rename = "type")]
     pub tipo: String,
@@ -79,12 +83,38 @@ pub async fn actualizar_cuenta(
 // el flujo previsto es desactivarla (`is_active`) vía `actualizar_cuenta`,
 // no borrarla — evita lidiar con la FK de `transactions.account_id`.
 
+/// Fila mínima de un miembro del workspace (id + nombre), para
+/// resolver "de quién es esta cuenta" en la vista de supervisión.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MiembroBasico {
+    pub user_id: Uuid,
+    pub name: String,
+}
+
+/// GET /workspaces/:workspace_id/cuentas/miembros — solo admin/dev.
+pub async fn listar_miembros(
+    workspace_id: Uuid,
+    token: &str,
+) -> Result<Vec<MiembroBasico>, ApiError> {
+    client::get(
+        &format!("/workspaces/{workspace_id}/cuentas/miembros"),
+        token,
+    )
+    .await
+}
+
 // ------------------------------ Transferencias ------------------------------
 
+/// Fila de listado: igual que el struct de creación pero con el
+/// nombre de ambas cuentas ya resuelto por el backend (JOIN) — las
+/// cuentas son personales, así que el frontend ya no puede resolverlo
+/// cruzando `GET .../cuentas` (un member solo recibe las suyas).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Transferencia {
     pub from_account_id: Uuid,
+    pub from_account_name: String,
     pub to_account_id: Uuid,
+    pub to_account_name: String,
     pub amount: Decimal,
     pub date: NaiveDate,
     pub description: Option<String>,

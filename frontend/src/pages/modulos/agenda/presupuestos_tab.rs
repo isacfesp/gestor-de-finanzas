@@ -11,6 +11,7 @@ use uuid::Uuid;
 use super::util::{confirmar, mes_actual};
 use crate::api::{accounting, agenda};
 use crate::auth::{token_vigente, use_auth};
+use crate::workspace::use_workspace;
 
 #[derive(Clone)]
 enum ModoFormulario {
@@ -22,9 +23,11 @@ enum ModoFormulario {
 #[component]
 pub fn PestanaPresupuestos(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
+    let workspace = use_workspace();
     let fecha_hoy = mes_actual().to_string();
     let mes = RwSignal::new(fecha_hoy[..7].to_string());
     let modo = RwSignal::new(ModoFormulario::Cerrado);
+    let mi_id = move || auth.usuario().map(|u| u.id);
 
     let categorias = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
@@ -90,11 +93,15 @@ pub fn PestanaPresupuestos(workspace_id: Uuid) -> impl IntoView {
                 let Ok(month) = format!("{mes_texto}-01").parse() else {
                     return ().into_any();
                 };
+                // Solo las categorías que YO ya presupuesté: cada usuario
+                // tiene su propio límite, así que la de otro miembro no
+                // debe bloquear la mía para la misma categoría.
                 let ya_presupuestadas: Vec<Uuid> = estado
                     .get()
                     .and_then(|r| r.ok())
                     .unwrap_or_default()
                     .iter()
+                    .filter(|e| Some(e.owner_id) == mi_id())
                     .map(|e| e.category_id)
                     .collect();
                 match modo.get() {
@@ -137,25 +144,53 @@ pub fn PestanaPresupuestos(workspace_id: Uuid) -> impl IntoView {
                 Some(Ok(lista)) if lista.is_empty() => {
                     view! { <p class="text-soft">"No hay presupuestos para este mes."</p> }.into_any()
                 }
-                Some(Ok(lista)) => view! {
-                    <div>
-                        {lista
-                            .into_iter()
-                            .map(|p| {
-                                let para_editar = p.clone();
-                                let id = p.id;
-                                view! {
-                                    <TarjetaPresupuesto
-                                        presupuesto=p
-                                        on_editar=move || modo.set(ModoFormulario::Editar(para_editar.clone()))
-                                        on_eliminar=move || eliminar(id)
-                                    />
-                                }
-                            })
-                            .collect_view()}
-                    </div>
+                Some(Ok(lista)) => {
+                    let (propios, ajenos): (Vec<_>, Vec<_>) = lista
+                        .into_iter()
+                        .partition(|p| Some(p.owner_id) == mi_id());
+                    let hay_ajenos = !ajenos.is_empty();
+                    view! {
+                        {if propios.is_empty() {
+                            view! { <p class="text-soft">"No tienes presupuestos para este mes."</p> }.into_any()
+                        } else {
+                            view! {
+                                <div>
+                                    {propios
+                                        .into_iter()
+                                        .map(|p| {
+                                            let para_editar = p.clone();
+                                            let id = p.id;
+                                            view! {
+                                                <TarjetaPresupuesto
+                                                    presupuesto=p
+                                                    editable=true
+                                                    on_editar=move || modo.set(ModoFormulario::Editar(para_editar.clone()))
+                                                    on_eliminar=move || eliminar(id)
+                                                />
+                                            }
+                                        })
+                                        .collect_view()}
+                                </div>
+                            }
+                            .into_any()
+                        }}
+                        <Show when=move || workspace.puede_supervisar() && hay_ajenos>
+                            <h3 class="text-soft" style="margin:24px 0 12px; font-size:13px; font-weight:600;">
+                                "Presupuestos de otros miembros (supervisión)"
+                            </h3>
+                            <div>
+                                {ajenos
+                                    .clone()
+                                    .into_iter()
+                                    .map(|p| view! {
+                                        <TarjetaPresupuesto presupuesto=p editable=false on_editar=|| {} on_eliminar=|| {}/>
+                                    })
+                                    .collect_view()}
+                            </div>
+                        </Show>
+                    }
+                    .into_any()
                 }
-                .into_any(),
             }}
         </section>
     }
@@ -164,6 +199,7 @@ pub fn PestanaPresupuestos(workspace_id: Uuid) -> impl IntoView {
 #[component]
 fn TarjetaPresupuesto<FE, FB>(
     presupuesto: agenda::EstadoPresupuesto,
+    editable: bool,
     on_editar: FE,
     on_eliminar: FB,
 ) -> impl IntoView
@@ -193,16 +229,23 @@ where
                     <span class="text-soft" style="font-size:12px;">
                         {format!("{:.2} / {:.2}", presupuesto.spent, presupuesto.limit_amount)}
                     </span>
-                    <button class="btn-ghost" style="padding:4px 8px; font-size:11px;" on:click=move |_| on_editar()>
-                        "Editar"
-                    </button>
-                    <button
-                        class="btn-ghost"
-                        style="padding:4px 8px; font-size:11px; color:var(--negative);"
-                        on:click=move |_| on_eliminar()
-                    >
-                        "Eliminar"
-                    </button>
+                    {if editable {
+                        view! {
+                            <button class="btn-ghost" style="padding:4px 8px; font-size:11px;" on:click=move |_| on_editar()>
+                                "Editar"
+                            </button>
+                            <button
+                                class="btn-ghost"
+                                style="padding:4px 8px; font-size:11px; color:var(--negative);"
+                                on:click=move |_| on_eliminar()
+                            >
+                                "Eliminar"
+                            </button>
+                        }
+                        .into_any()
+                    } else {
+                        view! { <span class="text-faint" style="font-size:11px;">"Solo lectura"</span> }.into_any()
+                    }}
                 </div>
             </div>
             <div class="budget-track">

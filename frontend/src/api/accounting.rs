@@ -75,6 +75,40 @@ pub struct Transaccion {
     pub description: Option<String>,
 }
 
+/// Fila de listado: igual a `Transaccion` más el nombre/tipo de la
+/// cuenta y el nombre de quién la registró (el backend hace el JOIN,
+/// ver `backend/src/accounting/transacciones.rs::listar`).
+/// `crear_transaccion`/`actualizar_transaccion` siguen usando
+/// `Transaccion` — no pasan por ese JOIN.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TransaccionListado {
+    pub id: Uuid,
+    #[serde(rename = "type")]
+    pub tipo: String,
+    pub amount: Decimal,
+    pub date: NaiveDate,
+    pub category_id: Option<Uuid>,
+    pub account_id: Uuid,
+    pub account_name: String,
+    pub account_tipo: String,
+    pub description: Option<String>,
+    pub created_by_name: String,
+}
+
+impl From<TransaccionListado> for Transaccion {
+    fn from(t: TransaccionListado) -> Self {
+        Transaccion {
+            id: t.id,
+            tipo: t.tipo,
+            amount: t.amount,
+            date: t.date,
+            category_id: t.category_id,
+            account_id: t.account_id,
+            description: t.description,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct DatosTransaccion<'a> {
     #[serde(rename = "type")]
@@ -126,7 +160,7 @@ pub async fn listar_transacciones(
     workspace_id: Uuid,
     filtros: &FiltrosTransacciones<'_>,
     token: &str,
-) -> Result<Vec<Transaccion>, ApiError> {
+) -> Result<Vec<TransaccionListado>, ApiError> {
     let ruta = format!(
         "/workspaces/{workspace_id}/transacciones{}",
         filtros.query_string()

@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO budgets (workspace_id, owner_id, category_id, month, limit_amount)\n           VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT (workspace_id, owner_id, category_id, month)\n               DO UPDATE SET limit_amount = EXCLUDED.limit_amount\n           RETURNING id, workspace_id, owner_id, category_id, month, limit_amount",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "category_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "month",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 5,
+        "name": "limit_amount",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Numeric"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ffe09cce6b9b492e7326c41ffae44beff23c4f5a462bf6daefcbc71ed3e938db"
+}

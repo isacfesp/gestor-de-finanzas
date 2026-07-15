@@ -14,6 +14,7 @@ use super::util::{confirmar, hoy};
 use crate::api::{accounting, accounts, agenda};
 use crate::auth::{token_vigente, use_auth};
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
+use crate::workspace::use_workspace;
 
 fn nombre_categoria(categorias: &[accounting::Categoria], id: Option<Uuid>) -> String {
     id.and_then(|id| categorias.iter().find(|c| c.id == id))
@@ -27,6 +28,16 @@ fn nombre_cuenta(cuentas: &[accounts::Cuenta], id: Option<Uuid>) -> String {
         .unwrap_or_else(|| "—".to_string())
 }
 
+/// Las cuentas son personales: el formulario de previsto solo puede
+/// asignar una cuenta propia (el backend lo exige igual).
+fn cuentas_propias(cuentas: &[accounts::Cuenta], mi_id: Option<Uuid>) -> Vec<accounts::Cuenta> {
+    cuentas
+        .iter()
+        .filter(|c| Some(c.owner_id) == mi_id)
+        .cloned()
+        .collect()
+}
+
 #[derive(Clone)]
 enum ModoFormulario {
     Cerrado,
@@ -37,7 +48,9 @@ enum ModoFormulario {
 #[component]
 pub fn PestanaPrevistos(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
+    let workspace = use_workspace();
     let modo = RwSignal::new(ModoFormulario::Cerrado);
+    let mi_id = move || auth.usuario().map(|u| u.id);
 
     let filtro_estado = RwSignal::new(String::new());
     let filtro_desde = RwSignal::new(String::new());
@@ -125,7 +138,7 @@ pub fn PestanaPrevistos(workspace_id: Uuid) -> impl IntoView {
                     <FormularioPrevisto
                         workspace_id=workspace_id
                         categorias=categorias.get().unwrap_or_default()
-                        cuentas=cuentas.get().unwrap_or_default()
+                        cuentas=cuentas_propias(&cuentas.get().unwrap_or_default(), mi_id())
                         previsto_existente=None
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); previstos.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
@@ -136,7 +149,7 @@ pub fn PestanaPrevistos(workspace_id: Uuid) -> impl IntoView {
                     <FormularioPrevisto
                         workspace_id=workspace_id
                         categorias=categorias.get().unwrap_or_default()
-                        cuentas=cuentas.get().unwrap_or_default()
+                        cuentas=cuentas_propias(&cuentas.get().unwrap_or_default(), mi_id())
                         previsto_existente=Some(p)
                         on_guardado=move || { modo.set(ModoFormulario::Cerrado); previstos.refetch(); }
                         on_cancelar=move || modo.set(ModoFormulario::Cerrado)
@@ -154,17 +167,47 @@ pub fn PestanaPrevistos(workspace_id: Uuid) -> impl IntoView {
                     Some(Ok(lista)) if lista.is_empty() => {
                         view! { <p class="text-soft">"No hay previstos con estos filtros."</p> }.into_any()
                     }
-                    Some(Ok(lista)) => view! {
-                        <TablaPrevistos
-                            workspace_id=workspace_id
-                            lista=lista
-                            categorias=categorias_ok
-                            cuentas=cuentas_ok
-                            on_editar=move |p| modo.set(ModoFormulario::Editar(p))
-                            on_cambio=move || previstos.refetch()
-                        />
+                    Some(Ok(lista)) => {
+                        let (propios, ajenos): (Vec<_>, Vec<_>) = lista
+                            .into_iter()
+                            .partition(|p| Some(p.created_by) == mi_id());
+                        let hay_ajenos = !ajenos.is_empty();
+                        let categorias_ajenos = categorias_ok.clone();
+                        let cuentas_ajenos = cuentas_ok.clone();
+                        view! {
+                            {if propios.is_empty() {
+                                view! { <p class="text-soft">"No tienes previstos con estos filtros."</p> }.into_any()
+                            } else {
+                                view! {
+                                    <TablaPrevistos
+                                        workspace_id=workspace_id
+                                        lista=propios
+                                        categorias=categorias_ok
+                                        cuentas=cuentas_ok
+                                        editable=true
+                                        on_editar=move |p| modo.set(ModoFormulario::Editar(p))
+                                        on_cambio=move || previstos.refetch()
+                                    />
+                                }
+                                .into_any()
+                            }}
+                            <Show when=move || workspace.puede_supervisar() && hay_ajenos>
+                                <h3 class="text-soft" style="margin:24px 0 12px; font-size:13px; font-weight:600;">
+                                    "Previstos de otros miembros (supervisión)"
+                                </h3>
+                                <TablaPrevistos
+                                    workspace_id=workspace_id
+                                    lista=ajenos.clone()
+                                    categorias=categorias_ajenos.clone()
+                                    cuentas=cuentas_ajenos.clone()
+                                    editable=false
+                                    on_editar=move |p| modo.set(ModoFormulario::Editar(p))
+                                    on_cambio=move || previstos.refetch()
+                                />
+                            </Show>
+                        }
+                        .into_any()
                     }
-                    .into_any(),
                 }
             }}
         </section>
@@ -174,6 +217,7 @@ pub fn PestanaPrevistos(workspace_id: Uuid) -> impl IntoView {
 #[component]
 fn MenuPrevisto<FE, FP, FB>(
     pagado: bool,
+    editable: bool,
     on_editar: FE,
     on_pagado: FP,
     on_borrar: FB,
@@ -199,17 +243,19 @@ where
             <Show when=move || abierto.get()>
                 <Portal>
                     <div class="menu-dropdown" style=move || estilo_posicion(posicion) on:mouseleave=move |_| abierto.set(false)>
-                        <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_editar(); }>
-                            "Editar"
-                        </button>
-                        <Show when=move || !pagado>
-                            <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_pagado(); }>
-                                "Marcar pagado"
+                        <Show when=move || editable>
+                            <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_editar(); }>
+                                "Editar"
+                            </button>
+                            <Show when=move || !pagado>
+                                <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_pagado(); }>
+                                    "Marcar pagado"
+                                </button>
+                            </Show>
+                            <button type="button" class="menu-item is-danger" on:click=move |_| { abierto.set(false); on_borrar(); }>
+                                "Borrar"
                             </button>
                         </Show>
-                        <button type="button" class="menu-item is-danger" on:click=move |_| { abierto.set(false); on_borrar(); }>
-                            "Borrar"
-                        </button>
                     </div>
                 </Portal>
             </Show>
@@ -223,6 +269,7 @@ fn TablaPrevistos<FE, FA>(
     lista: Vec<agenda::Previsto>,
     categorias: Vec<accounting::Categoria>,
     cuentas: Vec<accounts::Cuenta>,
+    editable: bool,
     on_editar: FE,
     on_cambio: FA,
 ) -> impl IntoView
@@ -289,6 +336,7 @@ where
                                     <td>
                                         <MenuPrevisto
                                             pagado=pagado
+                                            editable=editable
                                             on_editar=move || on_editar(guardado.get_value())
                                             on_pagado=move || marcar_pagado(id)
                                             on_borrar=move || borrar(id)

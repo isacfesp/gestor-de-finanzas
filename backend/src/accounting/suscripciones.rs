@@ -18,9 +18,9 @@ use crate::accounting::models::{
     ActualizarSuscripcionDatos, CrearSuscripcionDatos, FiltroProximosCobros, FiltrosSuscripciones,
     Suscripcion,
 };
-use crate::accounts::validar_cuenta;
+use crate::accounts::validar_cuenta_propia;
 use crate::auditoria::{self, acciones};
-use crate::auth::autorizacion::verificar_membresia;
+use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
@@ -94,7 +94,7 @@ pub async fn crear(
     validar_monto(datos.amount)?;
     validar_categoria_opcional(&pool, workspace_id, datos.category_id).await?;
     if let Some(account_id) = datos.account_id {
-        validar_cuenta(&pool, account_id, workspace_id).await?;
+        validar_cuenta_propia(&pool, account_id, workspace_id, usuario.id).await?;
     }
 
     if datos.name.trim().is_empty() {
@@ -106,11 +106,12 @@ pub async fn crear(
     let fila = sqlx::query_as!(
         Suscripcion,
         r#"INSERT INTO subscriptions
-               (workspace_id, name, amount, category_id, periodicity, next_billing_date, account_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id, workspace_id, name, amount, category_id, periodicity,
+               (workspace_id, owner_id, name, amount, category_id, periodicity, next_billing_date, account_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, workspace_id, owner_id, name, amount, category_id, periodicity,
                      next_billing_date, is_active, created_at, account_id"#,
         workspace_id,
+        usuario.id,
         datos.name.trim(),
         datos.amount,
         datos.category_id,
@@ -134,24 +135,29 @@ pub async fn crear(
 }
 
 /// GET /workspaces/:workspace_id/suscripciones?activas=true|false
+///
+/// Un `member` solo ve las suyas; un `admin`/dev ve todas (supervisión).
 pub async fn listar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtros): Query<FiltrosSuscripciones>,
 ) -> Result<Json<Vec<Suscripcion>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let filas = sqlx::query_as!(
         Suscripcion,
-        r#"SELECT id, workspace_id, name, amount, category_id, periodicity,
+        r#"SELECT id, workspace_id, owner_id, name, amount, category_id, periodicity,
                   next_billing_date, is_active, created_at, account_id
            FROM subscriptions
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
+             AND ($3::uuid IS NULL OR owner_id = $3)
            ORDER BY is_active DESC, next_billing_date"#,
         workspace_id,
-        filtros.activas
+        filtros.activas,
+        solo_propias
     )
     .fetch_all(&pool)
     .await?;
@@ -162,27 +168,31 @@ pub async fn listar(
 /// GET /workspaces/:workspace_id/suscripciones/proximos-cobros?dias=30
 ///
 /// Suscripciones activas cuyo próximo cobro cae dentro de la ventana
-/// indicada (30 días por defecto).
+/// indicada (30 días por defecto). Mismo criterio personal/supervisión
+/// que `listar`.
 pub async fn proximos_cobros(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path(workspace_id): Path<Uuid>,
     Query(filtro): Query<FiltroProximosCobros>,
 ) -> Result<Json<Vec<Suscripcion>>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
 
     let dias = filtro.dias.unwrap_or(30).clamp(1, 365);
     let limite: NaiveDate = Utc::now().date_naive() + chrono::Duration::days(dias);
 
     let filas = sqlx::query_as!(
         Suscripcion,
-        r#"SELECT id, workspace_id, name, amount, category_id, periodicity,
+        r#"SELECT id, workspace_id, owner_id, name, amount, category_id, periodicity,
                   next_billing_date, is_active, created_at, account_id
            FROM subscriptions
            WHERE workspace_id = $1 AND is_active = true AND next_billing_date <= $2
+             AND ($3::uuid IS NULL OR owner_id = $3)
            ORDER BY next_billing_date"#,
         workspace_id,
-        limite
+        limite,
+        solo_propias
     )
     .fetch_all(&pool)
     .await?;
@@ -190,7 +200,8 @@ pub async fn proximos_cobros(
     Ok(Json(filas))
 }
 
-/// PUT /workspaces/:workspace_id/suscripciones/:id — reemplazo completo.
+/// PUT /workspaces/:workspace_id/suscripciones/:id — reemplazo
+/// completo. Solo el dueño, sin excepción de rol.
 pub async fn actualizar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
@@ -202,7 +213,22 @@ pub async fn actualizar(
     validar_monto(datos.amount)?;
     validar_categoria_opcional(&pool, workspace_id, datos.category_id).await?;
     if let Some(account_id) = datos.account_id {
-        validar_cuenta(&pool, account_id, workspace_id).await?;
+        validar_cuenta_propia(&pool, account_id, workspace_id, usuario.id).await?;
+    }
+
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM subscriptions WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
+
+    if owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño de la suscripción puede editarla".to_string(),
+        ));
     }
 
     let fila = sqlx::query_as!(
@@ -211,7 +237,7 @@ pub async fn actualizar(
            SET name = $1, amount = $2, category_id = $3, periodicity = $4,
                next_billing_date = $5, is_active = $6, account_id = $7
            WHERE id = $8 AND workspace_id = $9
-           RETURNING id, workspace_id, name, amount, category_id, periodicity,
+           RETURNING id, workspace_id, owner_id, name, amount, category_id, periodicity,
                      next_billing_date, is_active, created_at, account_id"#,
         datos.name.trim(),
         datos.amount,
@@ -261,7 +287,7 @@ pub async fn marcar_cobrada(
 
     let actual = sqlx::query_as!(
         Suscripcion,
-        r#"SELECT id, workspace_id, name, amount, category_id, periodicity,
+        r#"SELECT id, workspace_id, owner_id, name, amount, category_id, periodicity,
                   next_billing_date, is_active, created_at, account_id
            FROM subscriptions WHERE id = $1 AND workspace_id = $2 FOR UPDATE"#,
         id,
@@ -270,6 +296,12 @@ pub async fn marcar_cobrada(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
+
+    if actual.owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño de la suscripción puede marcarla cobrada".to_string(),
+        ));
+    }
 
     let meses = meses_por_periodicidad(&actual.periodicity);
     let siguiente = actual
@@ -317,7 +349,7 @@ pub async fn marcar_cobrada(
         Suscripcion,
         r#"UPDATE subscriptions SET next_billing_date = $1
            WHERE id = $2
-           RETURNING id, workspace_id, name, amount, category_id, periodicity,
+           RETURNING id, workspace_id, owner_id, name, amount, category_id, periodicity,
                      next_billing_date, is_active, created_at, account_id"#,
         siguiente,
         id
@@ -339,13 +371,28 @@ pub async fn marcar_cobrada(
     Ok(Json(fila))
 }
 
-/// DELETE /workspaces/:workspace_id/suscripciones/:id
+/// DELETE /workspaces/:workspace_id/suscripciones/:id — solo el dueño.
 pub async fn eliminar(
     State(pool): State<PgPool>,
     usuario: UsuarioAutenticado,
     Path((workspace_id, id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, AppError> {
     verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    let owner_id = sqlx::query_scalar!(
+        "SELECT owner_id FROM subscriptions WHERE id = $1 AND workspace_id = $2",
+        id,
+        workspace_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
+
+    if owner_id != usuario.id {
+        return Err(AppError::Prohibido(
+            "Solo el dueño de la suscripción puede eliminarla".to_string(),
+        ));
+    }
 
     let resultado = sqlx::query!(
         "DELETE FROM subscriptions WHERE id = $1 AND workspace_id = $2",

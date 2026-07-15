@@ -76,6 +76,10 @@ pub async fn yo(access_token: &str) -> Result<Usuario, ApiError> {
 pub struct WorkspaceResumen {
     pub id: Uuid,
     pub name: String,
+    /// Rol efectivo del usuario en ESTE workspace: "admin", "member" o
+    /// "dev" — decide si puede supervisar cuentas ajenas o inspeccionar
+    /// métricas de otros miembros (ver `crate::workspace::puede_supervisar`).
+    pub role: String,
 }
 
 /// GET /auth/mis-workspaces — cualquier usuario autenticado. Un dev ve
@@ -84,4 +88,28 @@ pub struct WorkspaceResumen {
 /// workspace activo.
 pub async fn mis_workspaces(access_token: &str) -> Result<Vec<WorkspaceResumen>, ApiError> {
     client::get("/auth/mis-workspaces", access_token).await
+}
+
+#[derive(Serialize)]
+struct AceptarInvitacionDatos<'a> {
+    token: &'a str,
+    name: &'a str,
+    password: &'a str,
+}
+
+/// POST /auth/invitaciones/aceptar — canjea el token de una invitación:
+/// crea la cuenta (o la reutiliza si el email ya existía) y la une al
+/// workspace. No devuelve tokens de sesión — el invitado debe iniciar
+/// sesión aparte con `login`.
+pub async fn aceptar_invitacion(token: &str, name: &str, password: &str) -> Result<(), ApiError> {
+    client::post_publico::<_, serde_json::Value>(
+        "/auth/invitaciones/aceptar",
+        &AceptarInvitacionDatos {
+            token,
+            name,
+            password,
+        },
+    )
+    .await?;
+    Ok(())
 }

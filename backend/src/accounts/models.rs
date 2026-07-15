@@ -23,6 +23,10 @@ use uuid::Uuid;
 pub struct Cuenta {
     pub id: Uuid,
     pub workspace_id: Uuid,
+    /// Dueño individual de la cuenta: solo él puede operarla (crear
+    /// transacciones, editarla, borrarla). Un admin del workspace puede
+    /// verla (supervisión) pero no tocarla.
+    pub owner_id: Uuid,
     pub name: String,
     #[serde(rename = "type")]
     pub tipo: String,
@@ -68,6 +72,14 @@ pub struct FiltrosCuentas {
     pub activas: Option<bool>,
 }
 
+/// Fila mínima de un miembro del workspace (id + nombre), para que un
+/// admin resuelva "de quién es esta cuenta" en la vista de supervisión.
+#[derive(Debug, Serialize)]
+pub struct MiembroBasico {
+    pub user_id: Uuid,
+    pub name: String,
+}
+
 // ------------------------------ Transferencias ------------------------------
 
 #[derive(Debug, Serialize)]
@@ -76,6 +88,26 @@ pub struct Transferencia {
     pub workspace_id: Uuid,
     pub from_account_id: Uuid,
     pub to_account_id: Uuid,
+    pub amount: Decimal,
+    pub date: NaiveDate,
+    pub description: Option<String>,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Fila de listado: igual que `Transferencia` pero con el nombre de
+/// ambas cuentas ya resuelto (JOIN con `accounts`, mismo motivo que
+/// `accounting::TransaccionListado`: las cuentas son personales, así
+/// que un miembro ya no puede resolver el nombre de una cuenta ajena
+/// cruzando `GET .../cuentas` en el frontend).
+#[derive(Debug, Serialize)]
+pub struct TransferenciaListado {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub from_account_id: Uuid,
+    pub from_account_name: String,
+    pub to_account_id: Uuid,
+    pub to_account_name: String,
     pub amount: Decimal,
     pub date: NaiveDate,
     pub description: Option<String>,

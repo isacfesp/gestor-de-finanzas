@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT date_trunc($5::text, date)::date AS \"periodo!\",\n               COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0) AS \"income!\",\n               COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0) AS \"expense!\"\n           FROM transactions\n           WHERE workspace_id = $1 AND is_active = true\n             AND date >= $2 AND date <= $3\n             AND ($4::uuid IS NULL OR created_by = $4)\n           GROUP BY 1\n           ORDER BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "periodo!",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "income!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "expense!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Date",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "bda1258703a6d2f0efde9824878ae026d1c6148f58264c9f9f2d4479ffad6503"
+}
