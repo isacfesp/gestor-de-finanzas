@@ -6,7 +6,7 @@ mod transferencias;
 
 pub mod models;
 
-pub(crate) use cuentas::validar_cuenta_propia;
+pub(crate) use cuentas::{proxima_ocurrencia_dia_mes, validar_cuenta_propia};
 
 use axum::{
     Router,
@@ -19,6 +19,7 @@ pub fn router() -> Router<PgPool> {
     Router::new()
         .route("/cuentas", get(cuentas::listar).post(cuentas::crear))
         .route("/cuentas/miembros", get(cuentas::listar_miembros))
+        .route("/cuentas/alertas-tarjeta", get(cuentas::alertas_tarjeta))
         .route(
             "/cuentas/:id",
             put(cuentas::actualizar).delete(cuentas::eliminar),

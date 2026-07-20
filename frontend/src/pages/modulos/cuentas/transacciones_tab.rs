@@ -12,6 +12,7 @@
 
 use chrono::NaiveDate;
 use leptos::ev::SubmitEvent;
+use leptos::html;
 use leptos::portal::Portal;
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -23,6 +24,34 @@ use crate::auth::{token_vigente, use_auth};
 use crate::components::hoja_inferior::HojaInferior;
 use crate::components::icono_cuenta::IconoCuenta;
 use crate::components::menu_flotante::{abrir_menu, estilo_posicion};
+
+// -------------------------- Filtro por color --------------------------
+
+/// Opciones del filtro de operación, en el mismo orden que se muestran
+/// como chips. `""` ("Todos") no tiene color propio, usa el estilo
+/// `.is-active` genérico (acento).
+const OPCIONES_OPERACION: [(&str, &str); 5] = [
+    ("", "Todos"),
+    ("Ingreso", "Ingreso"),
+    ("Gasto", "Gasto"),
+    ("Ahorro", "Ahorro"),
+    ("Transferencia", "Transferencia"),
+];
+
+/// Mismo color que ya pinta cada fila en `construir_filas`: el chip
+/// activo anticipa visualmente el color de las filas que va a mostrar.
+/// Aplicado siempre inline vía `style` (nunca clases CSS por color),
+/// igual criterio que el resto del proyecto para colores de negocio.
+fn estilo_chip_operacion(valor: &str) -> String {
+    let (color, fondo) = match valor {
+        "Ingreso" => ("var(--positive)", "rgba(var(--positive-rgb), .12)"),
+        "Gasto" => ("var(--negative)", "rgba(var(--negative-rgb), .12)"),
+        "Ahorro" => ("var(--accent)", "var(--accent-soft)"),
+        "Transferencia" => ("var(--text)", "var(--hover)"),
+        _ => return String::new(),
+    };
+    format!("color:{color}; border-color:{color}; background:{fondo};")
+}
 
 // ------------------------------ Operación ------------------------------
 
@@ -206,10 +235,21 @@ enum ModoFormulario {
 }
 
 #[component]
-pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
+pub fn PestanaTransacciones(
+    workspace_id: Uuid,
+    /// Deep-link del FAB "Acceso rápido": aterriza con el formulario de
+    /// alta ya abierto, en vez de exigir un segundo tap en "+ Nueva
+    /// operación".
+    #[prop(default = false)]
+    abrir_formulario_inicial: bool,
+) -> impl IntoView {
     let auth = use_auth();
     let mi_id = move || auth.usuario().map(|u| u.id);
-    let modo = RwSignal::new(ModoFormulario::Cerrado);
+    let modo = RwSignal::new(if abrir_formulario_inicial {
+        ModoFormulario::Crear
+    } else {
+        ModoFormulario::Cerrado
+    });
 
     let filtro_operacion = RwSignal::new(String::new());
     let filtro_desde = RwSignal::new(String::new());
@@ -288,18 +328,26 @@ pub fn PestanaTransacciones(workspace_id: Uuid) -> impl IntoView {
                 </button>
             </div>
 
+            <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+                {OPCIONES_OPERACION
+                    .iter()
+                    .map(|(valor, etiqueta)| {
+                        let valor = *valor;
+                        let activo = move || filtro_operacion.get() == valor;
+                        view! {
+                            <button
+                                type="button"
+                                class=move || if activo() { "chip chip-toggle is-active" } else { "chip chip-toggle" }
+                                style=move || if activo() { estilo_chip_operacion(valor) } else { String::new() }
+                                on:click=move |_| filtro_operacion.set(valor.to_string())
+                            >
+                                {*etiqueta}
+                            </button>
+                        }
+                    })
+                    .collect_view()}
+            </div>
             <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
-                <select
-                    style="max-width:170px;"
-                    prop:value=move || filtro_operacion.get()
-                    on:change=move |ev| filtro_operacion.set(event_target_value(&ev))
-                >
-                    <option value="">"Todos"</option>
-                    <option value="Ingreso">"Ingresos"</option>
-                    <option value="Gasto">"Gastos"</option>
-                    <option value="Ahorro">"Ahorros"</option>
-                    <option value="Transferencia">"Transferencias"</option>
-                </select>
                 <input
                     type="date"
                     prop:value=move || filtro_desde.get()
@@ -525,6 +573,17 @@ where
     let auth = use_auth();
     let es_edicion = transaccion_existente.is_some();
     let id_existente = transaccion_existente.as_ref().map(|t| t.id);
+
+    // Al crear (no al editar, ahí el usuario ya sabe qué campo tocar)
+    // enfoca el monto apenas se monta el formulario, para que en mobile
+    // salga el teclado sin que haga falta un tap extra — clave para el
+    // FAB "Acceso rápido", que abre este formulario directo.
+    let monto_ref = NodeRef::<html::Input>::new();
+    if !es_edicion {
+        monto_ref.on_load(|el| {
+            let _ = el.focus();
+        });
+    }
 
     // Signal (no solo prop estática): el select de categoría vive dentro
     // de un <Show>, que puede reconstruir sus hijos varias veces — un
@@ -774,6 +833,7 @@ where
                 <div class="field">
                     <label>"Monto"</label>
                     <input
+                        node_ref=monto_ref
                         placeholder="0.00"
                         inputmode="decimal"
                         prop:value=move || monto.get()

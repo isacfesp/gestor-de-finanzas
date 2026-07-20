@@ -10,6 +10,7 @@
 //!   transacción — una categoría/etiqueta se crea aquí, no al vuelo.
 
 use leptos::prelude::*;
+use leptos_router::hooks::use_query_map;
 use uuid::Uuid;
 
 use crate::workspace::use_workspace;
@@ -39,7 +40,20 @@ enum Pestana {
 #[component]
 pub fn CuentasPage() -> impl IntoView {
     let workspace = use_workspace();
-    let pestana = RwSignal::new(Pestana::Cuentas);
+    // Deep-link del FAB "Acceso rápido" (`?tab=transacciones&crear=1`):
+    // aterriza directo en la pestaña con el formulario ya abierto, sin
+    // que el usuario tenga que recorrer los tabs a mano. Se lee una
+    // sola vez al montar (`with_untracked`) — cambiar de pestaña
+    // después es cosa del signal, no de la URL.
+    let query = use_query_map();
+    let pestana = RwSignal::new(
+        if query.with_untracked(|q| q.get("tab")).as_deref() == Some("transacciones") {
+            Pestana::Transacciones
+        } else {
+            Pestana::Cuentas
+        },
+    );
+    let abrir_formulario_inicial = query.with_untracked(|q| q.get("crear")).as_deref() == Some("1");
 
     view! {
         <Show
@@ -62,7 +76,10 @@ pub fn CuentasPage() -> impl IntoView {
                 <PestanaCuentas workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             </Show>
             <Show when=move || pestana.get() == Pestana::Transacciones>
-                <PestanaTransacciones workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+                <PestanaTransacciones
+                    workspace_id=workspace.id().unwrap_or(Uuid::nil())
+                    abrir_formulario_inicial=abrir_formulario_inicial
+                />
             </Show>
             <Show when=move || pestana.get() == Pestana::CategoriasEtiquetas>
                 <PestanaCategorias workspace_id=workspace.id().unwrap_or(Uuid::nil())/>

@@ -8,12 +8,21 @@
 
 use chrono::{Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
+use serde_json::json;
 use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
 
+use crate::accounting::suscripciones;
+use crate::accounts::proxima_ocurrencia_dia_mes;
+use crate::auditoria::{self, acciones};
+
 /// Días de anticipación para avisar de un cobro próximo.
 const DIAS_AVISO_SUSCRIPCION: i64 = 3;
+
+/// Días de anticipación para avisar de una fecha de corte/pago próxima
+/// de una tarjeta de crédito.
+const DIAS_AVISO_TARJETA: i64 = 3;
 
 /// Cada cuánto se re-evalúa todo. La spec pide un "ciclo diario"; se
 /// aproxima con un intervalo fijo desde el arranque en vez de alinear
@@ -42,8 +51,96 @@ pub async fn ejecutar_ciclo_periodico(pool: PgPool) {
 }
 
 async fn ejecutar_ciclo(pool: &PgPool) -> Result<(), sqlx::Error> {
+    // Primero: si una suscripción se cobra sola en esta vuelta, su
+    // next_billing_date ya avanza antes de que revisar_suscripciones
+    // evalúe si hay que avisar "por vencer" — evita notificar sobre un
+    // cobro que ya se resolvió solo en el mismo ciclo.
+    revisar_cobros_automaticos(pool).await?;
     revisar_suscripciones(pool).await?;
     revisar_presupuestos(pool).await?;
+    revisar_tarjetas_credito(pool).await?;
+    Ok(())
+}
+
+/// Suscripciones activas con cuenta asignada cuyo cobro ya venció:
+/// ejecuta el mismo efecto que el botón manual "Marcar cobrada" (ver
+/// `accounting::suscripciones::ejecutar_cobro`), sin intervención del
+/// usuario. El botón manual sigue disponible como respaldo.
+async fn revisar_cobros_automaticos(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let hoy = Utc::now().date_naive();
+
+    let filas = sqlx::query!(
+        r#"SELECT id, workspace_id FROM subscriptions
+           WHERE is_active = true AND account_id IS NOT NULL AND next_billing_date <= $1"#,
+        hoy
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for fila in filas {
+        match suscripciones::ejecutar_cobro(pool, fila.workspace_id, fila.id, None).await {
+            Ok(cobrada) => {
+                auditoria::registrar(
+                    pool,
+                    Some(fila.workspace_id),
+                    None,
+                    acciones::SUSCRIPCION_COBRADA_AUTOMATICA,
+                    json!({"suscripcion_id": cobrada.id, "next_billing_date": cobrada.next_billing_date}),
+                )
+                .await;
+            }
+            // AppError solo deriva Debug, no Display: {:?}, nunca {}.
+            Err(e) => eprintln!("ERROR en autocobro de la suscripción {}: {e:?}", fila.id),
+        }
+    }
+    Ok(())
+}
+
+/// Tarjetas de crédito activas cuya próxima fecha de corte o de pago
+/// límite cae dentro de `DIAS_AVISO_TARJETA`.
+async fn revisar_tarjetas_credito(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let hoy = Utc::now().date_naive();
+
+    let cuentas = sqlx::query!(
+        r#"SELECT id, workspace_id, name, cutoff_day AS "cutoff_day!", payment_due_day AS "payment_due_day!"
+           FROM accounts
+           WHERE type = 'credit' AND is_active = true
+             AND cutoff_day IS NOT NULL AND payment_due_day IS NOT NULL"#
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for cuenta in cuentas {
+        let corte = proxima_ocurrencia_dia_mes(hoy, cuenta.cutoff_day as u32);
+        if corte <= hoy + chrono::Duration::days(DIAS_AVISO_TARJETA)
+            && !ya_notificado(pool, "credit_card_cutoff", cuenta.id, true).await?
+        {
+            crear_notificacion(
+                pool,
+                cuenta.workspace_id,
+                "credit_card_cutoff",
+                &format!("Fecha de corte próxima: {}", cuenta.name),
+                &format!("Tu tarjeta {} corta el {}.", cuenta.name, corte),
+                cuenta.id,
+            )
+            .await?;
+        }
+
+        let pago = proxima_ocurrencia_dia_mes(hoy, cuenta.payment_due_day as u32);
+        if pago <= hoy + chrono::Duration::days(DIAS_AVISO_TARJETA)
+            && !ya_notificado(pool, "credit_card_due", cuenta.id, true).await?
+        {
+            crear_notificacion(
+                pool,
+                cuenta.workspace_id,
+                "credit_card_due",
+                &format!("Pago límite próximo: {}", cuenta.name),
+                &format!("El pago límite de {} es el {}.", cuenta.name, pago),
+                cuenta.id,
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 

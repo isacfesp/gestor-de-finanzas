@@ -278,7 +278,13 @@ pub async fn actualizar(
     Ok(Json(fila))
 }
 
-/// POST /workspaces/:workspace_id/suscripciones/:id/marcar-cobrada
+/// Núcleo transaccional de "marcar cobrada", compartido entre el
+/// handler HTTP (`marcar_cobrada`, con `dueño_esperado = Some(usuario.id)`)
+/// y el auto-cobro del motor de recordatorios
+/// (`reminders::motor::revisar_cobros_automaticos`, con
+/// `dueño_esperado = None`, porque ahí no hay un usuario actuando — la
+/// consulta que alimenta al motor ya está correctamente acotada a
+/// suscripciones vencidas).
 ///
 /// Avanza `next_billing_date` según la periodicidad, para reflejar que
 /// el cobro de este ciclo ya ocurrió. Si la suscripción tiene cuenta
@@ -289,13 +295,12 @@ pub async fn actualizar(
 /// cobro que efectivamente correspondía a ese ciclo), no la fecha en
 /// que se marca cobrada. Sin cuenta asignada, se mantiene el
 /// comportamiento anterior: solo avanza la fecha.
-pub async fn marcar_cobrada(
-    State(pool): State<PgPool>,
-    usuario: UsuarioAutenticado,
-    Path((workspace_id, id)): Path<(Uuid, Uuid)>,
-) -> Result<Json<Suscripcion>, AppError> {
-    verificar_membresia(&pool, &usuario, workspace_id).await?;
-
+pub(crate) async fn ejecutar_cobro(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    id: Uuid,
+    dueño_esperado: Option<Uuid>,
+) -> Result<Suscripcion, AppError> {
     let mut tx = pool.begin().await?;
 
     let actual = sqlx::query_as!(
@@ -310,7 +315,9 @@ pub async fn marcar_cobrada(
     .await?
     .ok_or_else(|| AppError::NoEncontrado("Suscripción no encontrada".to_string()))?;
 
-    if actual.owner_id != usuario.id {
+    if let Some(uid) = dueño_esperado
+        && actual.owner_id != uid
+    {
         return Err(AppError::Prohibido(
             "Solo el dueño de la suscripción puede marcarla cobrada".to_string(),
         ));
@@ -353,7 +360,7 @@ pub async fn marcar_cobrada(
             actual.category_id,
             account_id,
             actual.name,
-            usuario.id,
+            actual.owner_id,
             id
         )
         .execute(&mut *tx)
@@ -373,6 +380,19 @@ pub async fn marcar_cobrada(
     .await?;
 
     tx.commit().await?;
+
+    Ok(fila)
+}
+
+/// POST /workspaces/:workspace_id/suscripciones/:id/marcar-cobrada
+pub async fn marcar_cobrada(
+    State(pool): State<PgPool>,
+    usuario: UsuarioAutenticado,
+    Path((workspace_id, id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Suscripcion>, AppError> {
+    verificar_membresia(&pool, &usuario, workspace_id).await?;
+
+    let fila = ejecutar_cobro(&pool, workspace_id, id, Some(usuario.id)).await?;
 
     auditoria::registrar(
         &pool,

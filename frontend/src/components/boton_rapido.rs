@@ -1,10 +1,15 @@
 //! Botón de acceso rápido (FAB) en móvil: un tap y medio (FAB → acción)
 //! en vez de recorrer el rail de navegación y el módulo correspondiente
 //! para llegar a "nueva transacción" — ver plan de rediseño mobile-first
-//! ("reducir los clics al máximo"). Por ahora lleva al módulo; que la
-//! hoja aterrice con el formulario de creación ya abierto es la mejora
-//! natural siguiente, pendiente de que esas páginas lean un parámetro
-//! de la URL.
+//! ("reducir los clics al máximo"). Cada acción no solo navega al
+//! módulo: aterriza directo en la pestaña correcta con el formulario de
+//! creación ya desplegado (query params `?tab=&crear=1`, leídos por
+//! cada página en `pages::modulos::*`), y el primer campo enfocado para
+//! que en mobile salga el teclado de una vez (ver `node_ref`/`on_load`
+//! en `FormularioOperacion`/`FormularioPrevisto`/`FormularioAporte`).
+//! "Aportar a una meta" no trae un `goal_id` (el FAB no sabe a cuál):
+//! si hay una sola meta activa, `PestanaMetas` la elige sola; si no,
+//! aterriza en la lista (o en "nueva meta" si todavía no hay ninguna).
 
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -15,9 +20,21 @@ const ACCION_CLASS: &str = "flex items-center gap-3 rounded-pane border border-c
     px-4 py-3.5 text-[14px] font-semibold text-text transition-colors hover:bg-hover";
 
 const ACCIONES: &[(&str, &str, &str)] = &[
-    ("Nueva transacción", "/cuentas", "wallet"),
-    ("Nuevo previsto", "/agenda", "calendar"),
-    ("Aportar a una meta", "/inversiones", "trend"),
+    (
+        "Nueva transacción",
+        "/cuentas?tab=transacciones&crear=1",
+        "wallet",
+    ),
+    (
+        "Nuevo previsto",
+        "/agenda?tab=previstos&crear=1",
+        "calendar",
+    ),
+    (
+        "Aportar a una meta",
+        "/inversiones?tab=metas&aportar=1",
+        "trend",
+    ),
 ];
 
 fn icono(kind: &str) -> AnyView {

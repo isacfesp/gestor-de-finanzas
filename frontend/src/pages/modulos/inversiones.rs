@@ -10,6 +10,7 @@
 //! - **Simulador**: calculadora libre de rendimiento, no persiste nada.
 
 use leptos::prelude::*;
+use leptos_router::hooks::use_query_map;
 use uuid::Uuid;
 
 use crate::workspace::use_workspace;
@@ -35,6 +36,12 @@ enum Pestana {
 pub fn InversionesPage() -> impl IntoView {
     let workspace = use_workspace();
     let pestana = RwSignal::new(Pestana::Metas);
+    // Deep-link del FAB "Acceso rápido" (`?tab=metas&aportar=1`) — Metas
+    // ya es la pestaña por defecto, así que solo hace falta leer si
+    // pide abrir el aporte (`PestanaMetas` decide, con sus propias
+    // metas ya cargadas, si hay una sola activa para aportarle directo).
+    let query = use_query_map();
+    let abrir_aporte_inicial = query.with_untracked(|q| q.get("aportar")).as_deref() == Some("1");
 
     view! {
         <Show
@@ -54,7 +61,10 @@ pub fn InversionesPage() -> impl IntoView {
             // garantiza); Uuid::nil() es solo un valor de respaldo inerte
             // para no depender de .unwrap()/.expect().
             <Show when=move || pestana.get() == Pestana::Metas>
-                <PestanaMetas workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+                <PestanaMetas
+                    workspace_id=workspace.id().unwrap_or(Uuid::nil())
+                    abrir_aporte_inicial=abrir_aporte_inicial
+                />
             </Show>
             <Show when=move || pestana.get() == Pestana::Inversiones>
                 <PestanaInversiones workspace_id=workspace.id().unwrap_or(Uuid::nil())/>

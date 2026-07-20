@@ -4,6 +4,7 @@
 
 use chrono::NaiveDate;
 use leptos::ev::SubmitEvent;
+use leptos::html;
 use leptos::prelude::*;
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -39,12 +40,31 @@ fn porcentaje(meta: &Meta) -> Decimal {
 }
 
 #[component]
-pub fn PestanaMetas(workspace_id: Uuid) -> impl IntoView {
+pub fn PestanaMetas(
+    workspace_id: Uuid,
+    /// Deep-link del FAB "Acceso rápido" ("Aportar a una meta"): el FAB
+    /// no sabe a qué meta apunta, así que acá se decide una vez que
+    /// cargan las metas — si hay una sola activa, entra directo a su
+    /// detalle con el formulario de aporte abierto; si no hay ninguna,
+    /// abre "nueva meta" en su lugar (no tiene sentido "aportar" sin
+    /// meta); si hay varias, no se puede elegir sola y se muestra la
+    /// lista como siempre.
+    #[prop(default = false)]
+    abrir_aporte_inicial: bool,
+) -> impl IntoView {
     let auth = use_auth();
     let modo = RwSignal::new(ModoFormulario::Cerrado);
     let vista = RwSignal::new(Vista::Lista);
     let filtro_completadas = RwSignal::new(String::new());
     let error_lista = RwSignal::new(None::<String>);
+    // Se apaga sola tras la primera decisión (o de entrada, si el FAB
+    // no pidió nada) — nunca debe reaccionar a un `metas.refetch()`
+    // posterior (ej. después de guardar un aporte).
+    let decidido_aporte_inicial = RwSignal::new(!abrir_aporte_inicial);
+    // Bandera de un solo uso: se lee y apaga en el mismo render en que
+    // `vista` entra a `Detalle`, para no reabrir el aporte si el
+    // usuario después vuelve a la lista y elige otra meta a mano.
+    let abrir_aporte_al_entrar = RwSignal::new(false);
 
     let metas = LocalResource::new(move || {
         let filtro = filtro_completadas.get();
@@ -68,13 +88,44 @@ pub fn PestanaMetas(workspace_id: Uuid) -> impl IntoView {
         metas.refetch();
     };
 
+    Effect::new(move |_| {
+        if decidido_aporte_inicial.get_untracked() {
+            return;
+        }
+        let Some(Ok(lista)) = metas.get() else {
+            return;
+        };
+        decidido_aporte_inicial.set(true);
+        let mut activas: Vec<Meta> = lista.into_iter().filter(|m| !m.is_completed).collect();
+        match activas.len() {
+            0 => modo.set(ModoFormulario::Crear),
+            1 => {
+                abrir_aporte_al_entrar.set(true);
+                vista.set(Vista::Detalle(activas.remove(0)));
+            }
+            _ => {}
+        }
+    });
+
     view! {
         <section class="panel">
             {move || match vista.get() {
-                Vista::Detalle(meta) => view! {
-                    <DetalleMeta workspace_id=workspace_id meta=meta on_volver=volver/>
+                Vista::Detalle(meta) => {
+                    // Se consume acá mismo: una vez leída, una entrada a
+                    // Detalle posterior (el usuario elige otra meta a
+                    // mano desde la lista) ya no la vuelve a disparar.
+                    let abrir_aporte = abrir_aporte_al_entrar.get_untracked();
+                    abrir_aporte_al_entrar.set(false);
+                    view! {
+                        <DetalleMeta
+                            workspace_id=workspace_id
+                            meta=meta
+                            on_volver=volver
+                            abrir_aporte_inicial=abrir_aporte
+                        />
+                    }
+                    .into_any()
                 }
-                .into_any(),
                 Vista::Lista => view! {
                     <div>
                         <div class="panel-head">
@@ -382,14 +433,19 @@ where
 }
 
 #[component]
-fn DetalleMeta<FV>(workspace_id: Uuid, meta: Meta, on_volver: FV) -> impl IntoView
+fn DetalleMeta<FV>(
+    workspace_id: Uuid,
+    meta: Meta,
+    on_volver: FV,
+    #[prop(default = false)] abrir_aporte_inicial: bool,
+) -> impl IntoView
 where
     FV: Fn() + 'static + Copy,
 {
     let auth = use_auth();
     let meta_actual = RwSignal::new(meta);
     let periodo = RwSignal::new("monthly".to_string());
-    let mostrar_aporte = RwSignal::new(false);
+    let mostrar_aporte = RwSignal::new(abrir_aporte_inicial);
 
     let progreso = LocalResource::new(move || {
         let id = meta_actual.get().id;
@@ -596,6 +652,14 @@ where
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
 
+    // Este formulario solo existe para crear (no hay "editar aporte"),
+    // así que siempre enfoca el monto al montarse — clave para el FAB
+    // "Acceso rápido", que puede llegar directo hasta acá.
+    let monto_ref = NodeRef::<html::Input>::new();
+    monto_ref.on_load(|el| {
+        let _ = el.focus();
+    });
+
     let guardar = move |ev: SubmitEvent| {
         ev.prevent_default();
         error.set(None);
@@ -657,6 +721,7 @@ where
                 <div class="field">
                     <label>"Monto"</label>
                     <input
+                        node_ref=monto_ref
                         placeholder="0.00"
                         inputmode="decimal"
                         prop:value=move || monto.get()

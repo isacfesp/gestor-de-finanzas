@@ -175,10 +175,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let pool = preparar_base_de_datos().await?;
     bootstrap_dev(&pool).await?;
 
-    // PgPool es un Arc por dentro: clonarlo es barato. El motor de
-    // recordatorios corre en el mismo proceso, no hay un binario
-    // worker separado (ver docker-compose.yml).
+    // PgPool es un Arc por dentro: clonarlo es barato. Ambos motores
+    // corren en el mismo proceso, no hay un binario worker separado
+    // (ver docker-compose.yml). Van en ciclos independientes: un fallo
+    // en el cálculo de accrual de inversiones no debe frenar las
+    // notificaciones, ni viceversa.
     tokio::spawn(reminders::motor::ejecutar_ciclo_periodico(pool.clone()));
+    tokio::spawn(investments::motor::ejecutar_ciclo_periodico(pool.clone()));
 
     let aplicacion = construir_router(pool);
 

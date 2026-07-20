@@ -10,6 +10,8 @@ use crate::auth::use_auth;
 use crate::workspace::use_workspace;
 
 mod accesos_rapidos;
+mod ahorro_inversiones;
+mod alertas;
 mod auditoria_rapida;
 mod distribucion;
 mod kpis;
@@ -19,6 +21,8 @@ mod tendencia;
 mod util;
 
 use accesos_rapidos::AccesosRapidos;
+use ahorro_inversiones::AhorroInversiones;
+use alertas::AlertasTarjetas;
 use auditoria_rapida::AuditoriaRapida;
 use distribucion::Distribucion;
 use kpis::Kpis;
@@ -41,6 +45,11 @@ pub fn Home() -> impl IntoView {
     // workspace completo; para cualquier otro se ignora en el backend
     // y este signal nunca se toca (ver `SelectorAlcance`).
     let alcance = RwSignal::new(None::<Uuid>);
+    // Tipo seleccionado al hacer clic en un stat-tile de Kpis
+    // ("income"/"expense"); filtra Accesos rápidos SIN cruzarse con el
+    // rango de fecha de Kpis — Accesos rápidos nunca filtró por fecha,
+    // seguir ese mismo criterio con el tipo no es un bug, es a propósito.
+    let filtro_tipo = RwSignal::new(None::<String>);
 
     view! {
         <section class="panel" style="padding: 22px 20px;">
@@ -72,18 +81,20 @@ pub fn Home() -> impl IntoView {
                 }
             }
         >
+            <AlertasTarjetas workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             <Show when=move || auth.es_dev()>
                 <div style="margin-top:16px;">
                     <SelectorAlcance workspace_id=workspace.id().unwrap_or(Uuid::nil()) alcance=alcance/>
                 </div>
             </Show>
             <div style="margin-top:16px;">
-                <Kpis workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta alcance=alcance/>
+                <Kpis workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta alcance=alcance filtro_tipo=filtro_tipo/>
             </div>
             <TasaAhorro workspace_id=workspace.id().unwrap_or(Uuid::nil()) alcance=alcance/>
+            <AhorroInversiones workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             <Tendencia workspace_id=workspace.id().unwrap_or(Uuid::nil()) alcance=alcance/>
             <Distribucion workspace_id=workspace.id().unwrap_or(Uuid::nil()) desde=desde hasta=hasta alcance=alcance/>
-            <AccesosRapidos workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+            <AccesosRapidos workspace_id=workspace.id().unwrap_or(Uuid::nil()) filtro_tipo=filtro_tipo/>
             <AuditoriaRapida workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
         </Show>
     }

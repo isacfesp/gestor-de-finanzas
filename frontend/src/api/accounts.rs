@@ -12,8 +12,10 @@ use super::error::ApiError;
 // -------------------------------- Cuentas --------------------------------
 
 /// Para `tipo == "credit"`, `balance` es deuda (negativo cuando hay algo
-/// usado) y `credit_limit` el límite de la tarjeta; para el resto de
-/// los tipos `credit_limit` es `None`.
+/// usado), `credit_limit` el límite de la tarjeta, y `cutoff_day`/
+/// `payment_due_day` el día del mes (1-31) en que corta el ciclo y en
+/// que vence el pago — recurrente, no una fecha fija. Para el resto de
+/// los tipos los tres son `None`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cuenta {
     pub id: Uuid,
@@ -28,6 +30,8 @@ pub struct Cuenta {
     pub currency: String,
     pub is_active: bool,
     pub credit_limit: Option<Decimal>,
+    pub cutoff_day: Option<i16>,
+    pub payment_due_day: Option<i16>,
 }
 
 #[derive(Debug, Serialize)]
@@ -38,6 +42,8 @@ pub struct CrearCuentaDatos<'a> {
     pub balance: Option<Decimal>,
     pub currency: Option<&'a str>,
     pub credit_limit: Option<Decimal>,
+    pub cutoff_day: Option<i16>,
+    pub payment_due_day: Option<i16>,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,6 +54,35 @@ pub struct ActualizarCuentaDatos<'a> {
     pub currency: &'a str,
     pub is_active: bool,
     pub credit_limit: Option<Decimal>,
+    pub cutoff_day: Option<i16>,
+    pub payment_due_day: Option<i16>,
+}
+
+/// Fila de `GET /cuentas/alertas-tarjeta`: una tarjeta de crédito cuya
+/// fecha de corte o de pago límite cae dentro de la ventana de aviso.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AlertaTarjeta {
+    pub account_id: Uuid,
+    pub account_name: String,
+    pub currency: String,
+    pub balance: Decimal,
+    pub credit_limit: Decimal,
+    pub cutoff_date: NaiveDate,
+    pub payment_due_date: NaiveDate,
+}
+
+/// GET /workspaces/:workspace_id/cuentas/alertas-tarjeta?dias=N
+pub async fn listar_alertas_tarjeta(
+    workspace_id: Uuid,
+    dias: Option<i64>,
+    token: &str,
+) -> Result<Vec<AlertaTarjeta>, ApiError> {
+    let query = dias.map(|d| format!("?dias={d}")).unwrap_or_default();
+    client::get(
+        &format!("/workspaces/{workspace_id}/cuentas/alertas-tarjeta{query}"),
+        token,
+    )
+    .await
 }
 
 /// GET /workspaces/:workspace_id/cuentas

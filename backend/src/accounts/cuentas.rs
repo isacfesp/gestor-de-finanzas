@@ -7,13 +7,15 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use chrono::{Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::accounts::models::{
-    ActualizarCuentaDatos, CrearCuentaDatos, Cuenta, FiltrosCuentas, MiembroBasico,
+    ActualizarCuentaDatos, AlertaTarjeta, CrearCuentaDatos, Cuenta, FiltroAlertasTarjeta,
+    FiltrosCuentas, MiembroBasico,
 };
 use crate::auditoria::{self, acciones};
 use crate::auth::autorizacion::{RolWorkspace, verificar_membresia};
@@ -21,6 +23,9 @@ use crate::auth::extractores::UsuarioAutenticado;
 use crate::errores::AppError;
 
 const TIPOS_CUENTA: [&str; 4] = ["cash", "debit", "credit", "savings"];
+
+/// Días de anticipación para avisar de una fecha de corte/pago próxima.
+const DIAS_AVISO_TARJETA: i64 = 7;
 
 fn validar_tipo(tipo: &str) -> Result<(), AppError> {
     if TIPOS_CUENTA.contains(&tipo) {
@@ -49,6 +54,105 @@ fn normalizar_credit_limit(
         _ => Err(AppError::NoProcesable(
             "Las tarjetas de crédito requieren un límite mayor a cero".to_string(),
         )),
+    }
+}
+
+/// Mismo criterio que `normalizar_credit_limit`: solo las tarjetas de
+/// crédito tienen día de corte/pago, y ambos son obligatorios (1-31)
+/// para ese tipo. Para el resto de los tipos se ignoran, así una cuenta
+/// que deja de ser `credit` no se queda con fechas huérfanas.
+fn normalizar_dias_facturacion(
+    tipo: &str,
+    cutoff_day: Option<i16>,
+    payment_due_day: Option<i16>,
+) -> Result<(Option<i16>, Option<i16>), AppError> {
+    if tipo != "credit" {
+        return Ok((None, None));
+    }
+    match (cutoff_day, payment_due_day) {
+        (Some(corte), Some(pago)) if (1..=31).contains(&corte) && (1..=31).contains(&pago) => {
+            Ok((Some(corte), Some(pago)))
+        }
+        _ => Err(AppError::NoProcesable(
+            "Las tarjetas de crédito requieren día de corte y día límite de pago entre 1 y 31"
+                .to_string(),
+        )),
+    }
+}
+
+/// Último día real de `mes` en `anio` (28-31), calculado como el día
+/// anterior al primero del mes siguiente.
+fn ultimo_dia_del_mes(anio: i32, mes: u32) -> u32 {
+    let (anio_siguiente, mes_siguiente) = if mes == 12 {
+        (anio + 1, 1)
+    } else {
+        (anio, mes + 1)
+    };
+    NaiveDate::from_ymd_opt(anio_siguiente, mes_siguiente, 1)
+        .expect("mes+1 normalizado siempre es una fecha válida")
+        .pred_opt()
+        .expect("el día anterior al 1 de cualquier mes siempre existe")
+        .day()
+}
+
+/// Próxima ocurrencia (inclusive) de `dia` como día del mes, contada
+/// desde `hoy`. Si `dia` no existe en el mes evaluado (ej. 31 en
+/// febrero), usa el último día real de ese mes.
+pub(crate) fn proxima_ocurrencia_dia_mes(hoy: NaiveDate, dia: u32) -> NaiveDate {
+    let candidato_este_mes = dia.min(ultimo_dia_del_mes(hoy.year(), hoy.month()));
+    let fecha_este_mes = hoy
+        .with_day(candidato_este_mes)
+        .expect("candidato ya está acotado al último día real del mes");
+
+    if fecha_este_mes >= hoy {
+        return fecha_este_mes;
+    }
+
+    let (anio_siguiente, mes_siguiente) = if hoy.month() == 12 {
+        (hoy.year() + 1, 1)
+    } else {
+        (hoy.year(), hoy.month() + 1)
+    };
+    let candidato_siguiente = dia.min(ultimo_dia_del_mes(anio_siguiente, mes_siguiente));
+    NaiveDate::from_ymd_opt(anio_siguiente, mes_siguiente, candidato_siguiente)
+        .expect("candidato ya está acotado al último día real del mes siguiente")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dia_31_en_febrero_usa_el_ultimo_dia_real() {
+        let hoy = NaiveDate::from_ymd_opt(2026, 2, 1).unwrap();
+        assert_eq!(
+            proxima_ocurrencia_dia_mes(hoy, 31),
+            NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
+        );
+    }
+
+    #[test]
+    fn dia_31_en_febrero_bisiesto() {
+        let hoy = NaiveDate::from_ymd_opt(2028, 2, 1).unwrap();
+        assert_eq!(
+            proxima_ocurrencia_dia_mes(hoy, 31),
+            NaiveDate::from_ymd_opt(2028, 2, 29).unwrap()
+        );
+    }
+
+    #[test]
+    fn hoy_cae_justo_en_el_dia_devuelve_hoy() {
+        let hoy = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
+        assert_eq!(proxima_ocurrencia_dia_mes(hoy, 15), hoy);
+    }
+
+    #[test]
+    fn rollover_normal_de_mes() {
+        let hoy = NaiveDate::from_ymd_opt(2026, 7, 20).unwrap();
+        assert_eq!(
+            proxima_ocurrencia_dia_mes(hoy, 5),
+            NaiveDate::from_ymd_opt(2026, 8, 5).unwrap()
+        );
     }
 }
 
@@ -95,22 +199,28 @@ pub async fn crear(
     }
 
     let credit_limit = normalizar_credit_limit(&datos.tipo, datos.credit_limit)?;
+    let (cutoff_day, payment_due_day) =
+        normalizar_dias_facturacion(&datos.tipo, datos.cutoff_day, datos.payment_due_day)?;
     let balance_inicial = datos.balance.unwrap_or(Decimal::ZERO);
     let moneda = datos.currency.unwrap_or_else(|| "MXN".to_string());
 
     let resultado = sqlx::query_as!(
         Cuenta,
-        r#"INSERT INTO accounts (workspace_id, owner_id, name, type, balance, currency, credit_limit)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+        r#"INSERT INTO accounts
+               (workspace_id, owner_id, name, type, balance, currency, credit_limit,
+                cutoff_day, payment_due_day)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING id, workspace_id, owner_id, name, type AS "tipo", balance, currency,
-                     is_active, credit_limit, created_at"#,
+                     is_active, credit_limit, cutoff_day, payment_due_day, created_at"#,
         workspace_id,
         usuario.id,
         datos.name.trim(),
         datos.tipo,
         balance_inicial,
         moneda,
-        credit_limit
+        credit_limit,
+        cutoff_day,
+        payment_due_day
     )
     .fetch_one(&pool)
     .await;
@@ -154,7 +264,7 @@ pub async fn listar(
     let filas = sqlx::query_as!(
         Cuenta,
         r#"SELECT id, workspace_id, owner_id, name, type AS "tipo", balance, currency,
-                  is_active, credit_limit, created_at
+                  is_active, credit_limit, cutoff_day, payment_due_day, created_at
            FROM accounts
            WHERE workspace_id = $1
              AND ($2::bool IS NULL OR is_active = $2)
@@ -239,19 +349,24 @@ pub async fn actualizar(
     }
 
     let credit_limit = normalizar_credit_limit(&datos.tipo, datos.credit_limit)?;
+    let (cutoff_day, payment_due_day) =
+        normalizar_dias_facturacion(&datos.tipo, datos.cutoff_day, datos.payment_due_day)?;
 
     let resultado = sqlx::query_as!(
         Cuenta,
         r#"UPDATE accounts
-           SET name = $1, type = $2, currency = $3, is_active = $4, credit_limit = $5
-           WHERE id = $6 AND workspace_id = $7
+           SET name = $1, type = $2, currency = $3, is_active = $4, credit_limit = $5,
+               cutoff_day = $6, payment_due_day = $7
+           WHERE id = $8 AND workspace_id = $9
            RETURNING id, workspace_id, owner_id, name, type AS "tipo", balance, currency,
-                     is_active, credit_limit, created_at"#,
+                     is_active, credit_limit, cutoff_day, payment_due_day, created_at"#,
         datos.name.trim(),
         datos.tipo,
         datos.currency,
         datos.is_active,
         credit_limit,
+        cutoff_day,
+        payment_due_day,
         id,
         workspace_id
     )
@@ -334,4 +449,60 @@ pub async fn eliminar(
         ),
         Err(e) => Err(e.into()),
     }
+}
+
+/// GET /workspaces/:workspace_id/cuentas/alertas-tarjeta?dias=N
+///
+/// Tarjetas de crédito propias (o de todo el workspace si es admin/dev)
+/// cuya próxima fecha de corte o de pago límite cae dentro de los
+/// próximos `dias` (7 por defecto) — a diferencia de la campana de
+/// notificaciones, siempre refleja el estado actual, sin depender de si
+/// ya se generó o leyó un aviso.
+pub async fn alertas_tarjeta(
+    State(pool): State<PgPool>,
+    usuario: UsuarioAutenticado,
+    Path(workspace_id): Path<Uuid>,
+    Query(filtro): Query<FiltroAlertasTarjeta>,
+) -> Result<Json<Vec<AlertaTarjeta>>, AppError> {
+    let rol = verificar_membresia(&pool, &usuario, workspace_id).await?;
+    let solo_propias = matches!(rol, RolWorkspace::Member).then_some(usuario.id);
+
+    let dias = filtro.dias.unwrap_or(DIAS_AVISO_TARJETA).clamp(1, 90);
+    let hoy = Utc::now().date_naive();
+    let limite = hoy + chrono::Duration::days(dias);
+
+    let cuentas = sqlx::query!(
+        r#"SELECT id, name, currency, balance, credit_limit AS "credit_limit!",
+                  cutoff_day AS "cutoff_day!", payment_due_day AS "payment_due_day!"
+           FROM accounts
+           WHERE workspace_id = $1 AND type = 'credit' AND is_active = true
+             AND cutoff_day IS NOT NULL AND payment_due_day IS NOT NULL
+             AND ($2::uuid IS NULL OR owner_id = $2)"#,
+        workspace_id,
+        solo_propias
+    )
+    .fetch_all(&pool)
+    .await?;
+
+    let alertas = cuentas
+        .into_iter()
+        .filter_map(|cuenta| {
+            let corte = proxima_ocurrencia_dia_mes(hoy, cuenta.cutoff_day as u32);
+            let pago = proxima_ocurrencia_dia_mes(hoy, cuenta.payment_due_day as u32);
+            if corte > limite && pago > limite {
+                return None;
+            }
+            Some(AlertaTarjeta {
+                account_id: cuenta.id,
+                account_name: cuenta.name,
+                currency: cuenta.currency,
+                balance: cuenta.balance,
+                credit_limit: cuenta.credit_limit,
+                cutoff_date: corte,
+                payment_due_date: pago,
+            })
+        })
+        .collect();
+
+    Ok(Json(alertas))
 }

@@ -6,6 +6,7 @@
 
 use chrono::NaiveDate;
 use leptos::ev::SubmitEvent;
+use leptos::html;
 use leptos::portal::Portal;
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -48,10 +49,20 @@ enum ModoFormulario {
 }
 
 #[component]
-pub fn PestanaPrevistos(workspace_id: Uuid) -> impl IntoView {
+pub fn PestanaPrevistos(
+    workspace_id: Uuid,
+    /// Deep-link del FAB "Acceso rápido": aterriza con el formulario de
+    /// alta ya abierto.
+    #[prop(default = false)]
+    abrir_formulario_inicial: bool,
+) -> impl IntoView {
     let auth = use_auth();
     let workspace = use_workspace();
-    let modo = RwSignal::new(ModoFormulario::Cerrado);
+    let modo = RwSignal::new(if abrir_formulario_inicial {
+        ModoFormulario::Crear
+    } else {
+        ModoFormulario::Cerrado
+    });
     let mi_id = move || auth.usuario().map(|u| u.id);
 
     let filtro_estado = RwSignal::new(String::new());
@@ -370,6 +381,17 @@ where
     let auth = use_auth();
     let es_edicion = previsto_existente.is_some();
     let id_existente = previsto_existente.as_ref().map(|p| p.id);
+
+    // Al crear (no al editar) enfoca el monto apenas se monta el
+    // formulario — clave para el FAB "Acceso rápido", que abre este
+    // formulario directo y necesita que salga el teclado en mobile.
+    let monto_ref = NodeRef::<html::Input>::new();
+    if !es_edicion {
+        monto_ref.on_load(|el| {
+            let _ = el.focus();
+        });
+    }
+
     let categorias = RwSignal::new(categorias);
     // Signal (no solo prop estática) para poder agregarle la cuenta
     // recién creada desde la hoja de creación rápida, sin esperar a
@@ -508,6 +530,7 @@ where
                 <div class="field">
                     <label>"Monto"</label>
                     <input
+                        node_ref=monto_ref
                         placeholder="0.00"
                         inputmode="decimal"
                         prop:value=move || monto.get()

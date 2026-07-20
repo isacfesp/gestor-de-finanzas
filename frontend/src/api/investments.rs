@@ -5,9 +5,9 @@
 //! el frontend la comparte entre ambos con `TarjetaDesglose`
 //! (`pages/modulos/inversiones/desglose.rs`).
 //!
-//! No hay `obtener_inversion` ni `actualizar_inversion`: el backend no
-//! expone PUT para este recurso, y ninguna pantalla necesita volver a
-//! pedir una inversión que ya llegó con el listado.
+//! No hay `obtener_inversion`: ninguna pantalla necesita volver a pedir
+//! una inversión que ya llegó con el listado (`actualizar_inversion`
+//! también recibe la fila completa actualizada en su respuesta).
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -38,17 +38,23 @@ pub struct Inversion {
     pub name: String,
     pub principal: Decimal,
     pub gat_annual_rate: Decimal,
+    /// Tasa de ISR propia de esta inversión (porcentaje anual) —
+    /// editable, ya no una constante global.
+    pub isr_annual_rate: Decimal,
     pub interest_type: String,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub is_active: bool,
 }
 
+/// Misma forma para crear y para editar (reemplazo completo de los
+/// campos financieros).
 #[derive(Debug, Serialize)]
 pub struct DatosInversion<'a> {
     pub name: &'a str,
     pub principal: Decimal,
     pub gat_annual_rate: Decimal,
+    pub isr_annual_rate: Decimal,
     pub interest_type: &'a str,
     pub start_date: NaiveDate,
     pub term_days: i32,
@@ -79,11 +85,48 @@ pub async fn crear_inversion(
     .await
 }
 
+/// PUT /workspaces/:workspace_id/inversiones/:id
+pub async fn actualizar_inversion(
+    workspace_id: Uuid,
+    id: Uuid,
+    datos: &DatosInversion<'_>,
+    token: &str,
+) -> Result<Inversion, ApiError> {
+    client::put(
+        &format!("/workspaces/{workspace_id}/inversiones/{id}"),
+        datos,
+        token,
+    )
+    .await
+}
+
 /// DELETE /workspaces/:workspace_id/inversiones/:id — borra en cascada
 /// investment_yields, sin más advertencia del backend.
 pub async fn eliminar_inversion(workspace_id: Uuid, id: Uuid, token: &str) -> Result<(), ApiError> {
     client::delete(
         &format!("/workspaces/{workspace_id}/inversiones/{id}"),
+        token,
+    )
+    .await
+}
+
+/// Agregado de ahorro por inversiones activas (bruto/ISR/neto
+/// acumulado), para la tarjeta del Dashboard.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResumenAhorroInversiones {
+    pub principal_invertido: Decimal,
+    pub gross_yield_acumulado: Decimal,
+    pub isr_acumulado: Decimal,
+    pub net_yield_acumulado: Decimal,
+}
+
+/// GET /workspaces/:workspace_id/inversiones/resumen
+pub async fn resumen_ahorro_inversiones(
+    workspace_id: Uuid,
+    token: &str,
+) -> Result<ResumenAhorroInversiones, ApiError> {
+    client::get(
+        &format!("/workspaces/{workspace_id}/inversiones/resumen"),
         token,
     )
     .await

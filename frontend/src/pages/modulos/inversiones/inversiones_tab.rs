@@ -52,11 +52,18 @@ enum Vista {
     Detalle(Inversion),
 }
 
+#[derive(Clone)]
+enum ModoFormulario {
+    Cerrado,
+    Crear,
+    Editar(Inversion),
+}
+
 #[component]
 pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
     let auth = use_auth();
     let workspace = use_workspace();
-    let mostrar_form = RwSignal::new(false);
+    let modo_form = RwSignal::new(ModoFormulario::Cerrado);
     let vista = RwSignal::new(Vista::Lista);
     let filtro_estado = RwSignal::new(String::new());
     let mi_id = move || auth.usuario().map(|u| u.id);
@@ -78,10 +85,21 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
     view! {
         <section class="panel">
             {move || match vista.get() {
-                Vista::Detalle(inv) => view! {
-                    <DetalleInversion workspace_id=workspace_id inversion=inv on_volver=volver/>
+                Vista::Detalle(inv) => {
+                    let guardada = StoredValue::new(inv.clone());
+                    view! {
+                        <DetalleInversion
+                            workspace_id=workspace_id
+                            inversion=inv
+                            on_volver=volver
+                            on_editar=move || {
+                                vista.set(Vista::Lista);
+                                modo_form.set(ModoFormulario::Editar(guardada.get_value()));
+                            }
+                        />
+                    }
+                    .into_any()
                 }
-                .into_any(),
                 Vista::Lista => view! {
                     <div>
                         <div class="panel-head">
@@ -89,7 +107,7 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
                             <button
                                 class="btn btn-primary"
                                 style="padding:8px 15px; font-size:12.5px;"
-                                on:click=move |_| mostrar_form.set(true)
+                                on:click=move |_| modo_form.set(ModoFormulario::Crear)
                             >
                                 "+ Nueva inversión"
                             </button>
@@ -107,13 +125,27 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
                             </select>
                         </div>
 
-                        <Show when=move || mostrar_form.get()>
-                            <FormularioInversion
-                                workspace_id=workspace_id
-                                on_guardado=move || { mostrar_form.set(false); inversiones.refetch(); }
-                                on_cancelar=move || mostrar_form.set(false)
-                            />
-                        </Show>
+                        {move || match modo_form.get() {
+                            ModoFormulario::Cerrado => ().into_any(),
+                            ModoFormulario::Crear => view! {
+                                <FormularioInversion
+                                    workspace_id=workspace_id
+                                    inversion_existente=None
+                                    on_guardado=move || { modo_form.set(ModoFormulario::Cerrado); inversiones.refetch(); }
+                                    on_cancelar=move || modo_form.set(ModoFormulario::Cerrado)
+                                />
+                            }
+                            .into_any(),
+                            ModoFormulario::Editar(inv) => view! {
+                                <FormularioInversion
+                                    workspace_id=workspace_id
+                                    inversion_existente=Some(inv)
+                                    on_guardado=move || { modo_form.set(ModoFormulario::Cerrado); inversiones.refetch(); }
+                                    on_cancelar=move || modo_form.set(ModoFormulario::Cerrado)
+                                />
+                            }
+                            .into_any(),
+                        }}
 
                         {move || match inversiones.get() {
                             None => view! { <p class="text-soft">"Cargando inversiones..."</p> }.into_any(),
@@ -146,6 +178,7 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
                                                     lista=propias
                                                     editable=true
                                                     on_ver=move |inv| vista.set(Vista::Detalle(inv))
+                                                    on_editar=move |inv| modo_form.set(ModoFormulario::Editar(inv))
                                                     on_cambio=move || inversiones.refetch()
                                                 />
                                             }
@@ -160,6 +193,7 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
                                                 lista=ajenas.clone()
                                                 editable=false
                                                 on_ver=move |inv| vista.set(Vista::Detalle(inv))
+                                                on_editar=move |_| {}
                                                 on_cambio=move || inversiones.refetch()
                                             />
                                         </Show>
@@ -177,9 +211,15 @@ pub fn PestanaInversiones(workspace_id: Uuid) -> impl IntoView {
 }
 
 #[component]
-fn MenuInversion<FV, FB>(editable: bool, on_ver: FV, on_borrar: FB) -> impl IntoView
+fn MenuInversion<FV, FE, FB>(
+    editable: bool,
+    on_ver: FV,
+    on_editar: FE,
+    on_borrar: FB,
+) -> impl IntoView
 where
     FV: Fn() + 'static + Copy + Send + Sync,
+    FE: Fn() + 'static + Copy + Send + Sync,
     FB: Fn() + 'static + Copy + Send + Sync,
 {
     let abierto = RwSignal::new(false);
@@ -202,6 +242,9 @@ where
                             "Ver detalle"
                         </button>
                         <Show when=move || editable>
+                            <button type="button" class="menu-item" on:click=move |_| { abierto.set(false); on_editar(); }>
+                                "Editar"
+                            </button>
                             <button type="button" class="menu-item is-danger" on:click=move |_| { abierto.set(false); on_borrar(); }>
                                 "Eliminar"
                             </button>
@@ -214,15 +257,17 @@ where
 }
 
 #[component]
-fn TablaInversiones<FV, FA>(
+fn TablaInversiones<FV, FE, FA>(
     workspace_id: Uuid,
     lista: Vec<Inversion>,
     editable: bool,
     on_ver: FV,
+    on_editar: FE,
     on_cambio: FA,
 ) -> impl IntoView
 where
     FV: Fn(Inversion) + 'static + Copy + Send + Sync,
+    FE: Fn(Inversion) + 'static + Copy + Send + Sync,
     FA: Fn() + 'static + Copy + Send + Sync,
 {
     let auth = use_auth();
@@ -262,6 +307,7 @@ where
                                         <MenuInversion
                                             editable=editable
                                             on_ver=move || on_ver(guardada.get_value())
+                                            on_editar=move || on_editar(guardada.get_value())
                                             on_borrar=move || {
                                                 if !confirmar("¿Eliminar esta inversión? Se borrará también su historial de rendimientos.") {
                                                     return;
@@ -285,9 +331,15 @@ where
     }
 }
 
+/// Tasa de ISR sugerida para prellenar el formulario de alta — solo un
+/// punto de partida razonable, cada inversión guarda la suya propia y
+/// es libremente editable.
+const ISR_SUGERIDA: &str = "0.50";
+
 #[component]
 fn FormularioInversion<F1, F2>(
     workspace_id: Uuid,
+    inversion_existente: Option<Inversion>,
     on_guardado: F1,
     on_cancelar: F2,
 ) -> impl IntoView
@@ -296,12 +348,49 @@ where
     F2: Fn() + 'static,
 {
     let auth = use_auth();
-    let nombre = RwSignal::new(String::new());
-    let principal = RwSignal::new(String::new());
-    let tasa = RwSignal::new(String::new());
-    let tipo_interes = RwSignal::new("simple".to_string());
-    let fecha_inicio = RwSignal::new(hoy().to_string());
-    let plazo = RwSignal::new(String::new());
+    let editando = inversion_existente.as_ref().map(|inv| inv.id);
+    let nombre = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| inv.name.clone())
+            .unwrap_or_default(),
+    );
+    let principal = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| inv.principal.to_string())
+            .unwrap_or_default(),
+    );
+    let tasa = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| inv.gat_annual_rate.to_string())
+            .unwrap_or_default(),
+    );
+    let tasa_isr = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| inv.isr_annual_rate.to_string())
+            .unwrap_or_else(|| ISR_SUGERIDA.to_string()),
+    );
+    let tipo_interes = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| inv.interest_type.clone())
+            .unwrap_or_else(|| "simple".to_string()),
+    );
+    let fecha_inicio = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| inv.start_date.to_string())
+            .unwrap_or_else(|| hoy().to_string()),
+    );
+    let plazo = RwSignal::new(
+        inversion_existente
+            .as_ref()
+            .map(|inv| (inv.end_date - inv.start_date).num_days().to_string())
+            .unwrap_or_default(),
+    );
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
 
@@ -319,6 +408,10 @@ where
         };
         let Ok(tasa_val) = tasa.get_untracked().parse() else {
             error.set(Some("La tasa no es un número válido".to_string()));
+            return;
+        };
+        let Ok(tasa_isr_val) = tasa_isr.get_untracked().parse() else {
+            error.set(Some("La tasa de ISR no es un número válido".to_string()));
             return;
         };
         let Ok(start_date) = fecha_inicio.get_untracked().parse::<NaiveDate>() else {
@@ -344,12 +437,18 @@ where
                 name: &nombre_actual,
                 principal: principal_val,
                 gat_annual_rate: tasa_val,
+                isr_annual_rate: tasa_isr_val,
                 interest_type: &tipo_actual,
                 start_date,
                 term_days,
             };
 
-            let resultado = investments::crear_inversion(workspace_id, &datos, &token).await;
+            let resultado = match editando {
+                Some(id) => {
+                    investments::actualizar_inversion(workspace_id, id, &datos, &token).await
+                }
+                None => investments::crear_inversion(workspace_id, &datos, &token).await,
+            };
             guardando.set(false);
             match resultado {
                 Ok(_) => on_guardado(),
@@ -372,6 +471,10 @@ where
                 <div class="field">
                     <label>"Tasa GAT anual (%)"</label>
                     <input placeholder="0.00" inputmode="decimal" prop:value=move || tasa.get() on:input=move |ev| tasa.set(event_target_value(&ev))/>
+                </div>
+                <div class="field">
+                    <label>"Tasa ISR anual (%)"</label>
+                    <input placeholder="0.00" inputmode="decimal" prop:value=move || tasa_isr.get() on:input=move |ev| tasa_isr.set(event_target_value(&ev))/>
                 </div>
                 <div class="field">
                     <label>"Tipo de interés"</label>
@@ -403,7 +506,11 @@ where
                     "Cancelar"
                 </button>
                 <button type="submit" class="btn btn-primary" disabled=move || guardando.get()>
-                    {move || if guardando.get() { "Guardando..." } else { "Crear inversión" }}
+                    {move || match (guardando.get(), editando) {
+                        (true, _) => "Guardando...",
+                        (false, Some(_)) => "Guardar cambios",
+                        (false, None) => "Crear inversión",
+                    }}
                 </button>
             </div>
         </form>
@@ -411,9 +518,15 @@ where
 }
 
 #[component]
-fn DetalleInversion<FV>(workspace_id: Uuid, inversion: Inversion, on_volver: FV) -> impl IntoView
+fn DetalleInversion<FV, FE>(
+    workspace_id: Uuid,
+    inversion: Inversion,
+    on_volver: FV,
+    on_editar: FE,
+) -> impl IntoView
 where
     FV: Fn() + 'static + Copy,
+    FE: Fn() + 'static + Copy,
 {
     let auth = use_auth();
     let id = inversion.id;
@@ -443,6 +556,11 @@ where
             <div class="panel-head">
                 <button class="btn-ghost" on:click=move |_| on_volver()>"← Volver"</button>
                 <h2>{inversion.name.clone()}</h2>
+                {editable.then(|| view! {
+                    <button class="btn-ghost" on:click=move |_| on_editar()>
+                        "Editar inversión"
+                    </button>
+                })}
                 {editable.then(|| view! {
                     <button
                         class="btn-ghost"

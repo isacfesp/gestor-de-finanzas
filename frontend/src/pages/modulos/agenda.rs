@@ -5,6 +5,7 @@
 //! Cuatro pestañas: Calendario, Suscripciones, Presupuestos, Previstos.
 
 use leptos::prelude::*;
+use leptos_router::hooks::use_query_map;
 use uuid::Uuid;
 
 use crate::workspace::use_workspace;
@@ -31,7 +32,17 @@ enum Pestana {
 #[component]
 pub fn AgendaPage() -> impl IntoView {
     let workspace = use_workspace();
-    let pestana = RwSignal::new(Pestana::Calendario);
+    // Deep-link del FAB "Acceso rápido" (`?tab=previstos&crear=1`) — ver
+    // el mismo patrón en `modulos::cuentas::CuentasPage`.
+    let query = use_query_map();
+    let pestana = RwSignal::new(
+        if query.with_untracked(|q| q.get("tab")).as_deref() == Some("previstos") {
+            Pestana::Previstos
+        } else {
+            Pestana::Calendario
+        },
+    );
+    let abrir_formulario_inicial = query.with_untracked(|q| q.get("crear")).as_deref() == Some("1");
 
     view! {
         <Show
@@ -60,7 +71,10 @@ pub fn AgendaPage() -> impl IntoView {
                 <PestanaPresupuestos workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
             </Show>
             <Show when=move || pestana.get() == Pestana::Previstos>
-                <PestanaPrevistos workspace_id=workspace.id().unwrap_or(Uuid::nil())/>
+                <PestanaPrevistos
+                    workspace_id=workspace.id().unwrap_or(Uuid::nil())
+                    abrir_formulario_inicial=abrir_formulario_inicial
+                />
             </Show>
         </Show>
     }

@@ -1,9 +1,12 @@
 // Puerta de entrada del módulo investments: inversiones, su proyección
-// de rendimiento/ISR, el simulador y el historial de rendimientos
-// reales acreditados.
+// de rendimiento/ISR, el simulador, el historial de rendimientos
+// reales acreditados, el resumen agregado para el Dashboard y el job
+// diario de accrual (motor).
 mod calculos;
 mod inversiones;
+pub mod motor;
 mod rendimientos;
+mod resumen;
 
 pub mod models;
 
@@ -21,9 +24,12 @@ pub fn router() -> Router<PgPool> {
             get(inversiones::listar).post(inversiones::crear),
         )
         .route("/inversiones/simular", post(inversiones::simular))
+        .route("/inversiones/resumen", get(resumen::obtener))
         .route(
             "/inversiones/:id",
-            get(inversiones::obtener).delete(inversiones::eliminar),
+            get(inversiones::obtener)
+                .put(inversiones::actualizar)
+                .delete(inversiones::eliminar),
         )
         .route("/inversiones/:id/proyeccion", get(inversiones::proyeccion))
         .route(

@@ -55,6 +55,7 @@ pub mod acciones {
     pub const SUSCRIPCION_CREADA: &str = "suscripcion_creada";
     pub const SUSCRIPCION_EDITADA: &str = "suscripcion_editada";
     pub const SUSCRIPCION_COBRADA: &str = "suscripcion_cobrada";
+    pub const SUSCRIPCION_COBRADA_AUTOMATICA: &str = "suscripcion_cobrada_automatica";
     pub const SUSCRIPCION_ELIMINADA: &str = "suscripcion_eliminada";
     pub const PRESUPUESTO_GUARDADO: &str = "presupuesto_guardado";
     pub const PRESUPUESTO_ELIMINADO: &str = "presupuesto_eliminado";
@@ -67,6 +68,7 @@ pub mod acciones {
 
     // investments
     pub const INVERSION_CREADA: &str = "inversion_creada";
+    pub const INVERSION_EDITADA: &str = "inversion_editada";
     pub const INVERSION_ELIMINADA: &str = "inversion_eliminada";
     pub const RENDIMIENTO_REGISTRADO: &str = "rendimiento_registrado";
 }

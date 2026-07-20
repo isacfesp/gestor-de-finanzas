@@ -14,12 +14,13 @@ use crate::investments::models::DesgloseRendimiento;
 
 const DIAS_POR_ANIO: i64 = 365;
 
-/// Tasa de retención anual de ISR sobre intereses (porcentaje, no
-/// fracción). La fija cada año la Ley de Ingresos de la Federación
-/// (LIF) y cambia de un ejercicio fiscal a otro — este valor es un
-/// placeholder razonable, hay que actualizarlo cuando cambie la tasa
-/// vigente.
-fn tasa_retencion_isr_anual() -> Decimal {
+/// Tasa de ISR sugerida (porcentaje, no fracción) para prellenar el
+/// formulario de alta y como default del simulador. Cada inversión
+/// real guarda su propia tasa en `isr_annual_rate` — esta constante ya
+/// no aplica a todas por igual, es solo un punto de partida razonable
+/// (la fija cada año la Ley de Ingresos de la Federación y cambia de
+/// un ejercicio fiscal a otro).
+pub fn tasa_retencion_isr_anual() -> Decimal {
     Decimal::new(50, 2) // 0.50 %
 }
 
@@ -53,6 +54,18 @@ pub fn validar_tasa(tasa: Decimal) -> Result<(), AppError> {
     }
 }
 
+/// A diferencia de la tasa GAT, el ISR sí puede ser legítimamente 0
+/// (algún régimen exento) — solo se rechaza un valor negativo.
+pub fn validar_tasa_isr(tasa: Decimal) -> Result<(), AppError> {
+    if tasa >= Decimal::ZERO {
+        Ok(())
+    } else {
+        Err(AppError::NoProcesable(
+            "La tasa de ISR no puede ser negativa".to_string(),
+        ))
+    }
+}
+
 pub fn validar_plazo(dias: i32) -> Result<(), AppError> {
     if dias > 0 {
         Ok(())
@@ -69,7 +82,7 @@ pub fn validar_plazo(dias: i32) -> Result<(), AppError> {
 /// - Compuesto: capitalización diaria (`checked_powi` hace exponenciación
 ///   por cuadrados repetidos, así que un plazo de años no cuesta más que
 ///   uno de días).
-fn rendimiento_bruto(
+pub(super) fn rendimiento_bruto(
     principal: Decimal,
     gat_annual_rate: Decimal,
     term_days: i32,
@@ -98,8 +111,14 @@ fn rendimiento_bruto(
 
 /// ISR retenido sobre el capital que originó los intereses, prorrateado
 /// por los días reales de la inversión (no hay monto exento vigente).
-fn isr_retenido(principal: Decimal, term_days: i32) -> Decimal {
-    let tasa_decimal = tasa_retencion_isr_anual() / Decimal::ONE_HUNDRED;
+/// `isr_annual_rate` es la tasa propia de cada inversión (o la del
+/// simulador), ya no una constante global.
+pub(super) fn isr_retenido(
+    principal: Decimal,
+    term_days: i32,
+    isr_annual_rate: Decimal,
+) -> Decimal {
+    let tasa_decimal = isr_annual_rate / Decimal::ONE_HUNDRED;
     principal * tasa_decimal * Decimal::from(term_days) / Decimal::from(DIAS_POR_ANIO)
 }
 
@@ -111,9 +130,10 @@ pub fn calcular_desglose(
     gat_annual_rate: Decimal,
     interest_type: &str,
     term_days: i32,
+    isr_annual_rate: Decimal,
 ) -> Result<DesgloseRendimiento, AppError> {
     let bruto = rendimiento_bruto(principal, gat_annual_rate, term_days, interest_type)?;
-    let isr = isr_retenido(principal, term_days);
+    let isr = isr_retenido(principal, term_days, isr_annual_rate);
     let neto = bruto - isr;
 
     Ok(DesgloseRendimiento {

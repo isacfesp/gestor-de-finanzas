@@ -100,6 +100,18 @@ button {
 /* ---------------------------- Tokens ---------------------------- */
 
 :root {
+  /* Le dice al navegador qué paleta usar para controles NATIVOS (ícono
+     del selector de fecha, checkboxes, scrollbar) — sin esto, el
+     navegador los pinta según la preferencia del SISTEMA OPERATIVO
+     (`prefers-color-scheme`), no según el tema real de la app
+     (`data-theme`, alternado a mano en `theme.rs`). Si SO y `data-theme`
+     no coinciden, el ícono del calendario queda del color equivocado
+     (oscuro sobre oscuro o claro sobre claro) — invisible. Repetido en
+     los 3 bloques de abajo con el valor que corresponda a cada uno.
+     Con el atributo aplicado, la <html data-theme> gana por
+     especificidad sobre el default de :root cuando ambos calzan. */
+  color-scheme: dark;
+
   --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -125,9 +137,11 @@ button {
   --accent-rgb: 6, 182, 212;
   --accent-soft: rgba(6, 182, 212, .14);
   --positive: #34d399;
+  --positive-rgb: 52, 211, 153;
   --negative: #fb7185;
   --negative-rgb: 251, 113, 133;
   --warning: #fbbf24;
+  --warning-rgb: 251, 191, 36;
   --hover: rgba(255, 255, 255, .05);
   --sidebar: #0a1230;
   --glass: rgba(12, 23, 56, .72);
@@ -146,6 +160,7 @@ button {
 
 @media (prefers-color-scheme: light) {
   :root {
+    color-scheme: light;
     --bg: #eef2f9;
     --bg-2: #e7edf7;
     --panel: #ffffff;
@@ -161,9 +176,11 @@ button {
     --accent-rgb: 8, 145, 178;
     --accent-soft: rgba(8, 145, 178, .12);
     --positive: #16a34a;
+    --positive-rgb: 22, 163, 74;
     --negative: #e11d48;
     --negative-rgb: 225, 29, 72;
     --warning: #b45309;
+    --warning-rgb: 180, 83, 9;
     --hover: rgba(9, 20, 54, .045);
     --sidebar: #ffffff;
     --glass: rgba(255, 255, 255, .78);
@@ -180,6 +197,7 @@ button {
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #070b1a;
   --bg-2: #0a1230;
   --panel: #0c1738;
@@ -195,9 +213,11 @@ button {
   --accent-rgb: 6, 182, 212;
   --accent-soft: rgba(6, 182, 212, .14);
   --positive: #34d399;
+  --positive-rgb: 52, 211, 153;
   --negative: #fb7185;
   --negative-rgb: 251, 113, 133;
   --warning: #fbbf24;
+  --warning-rgb: 251, 191, 36;
   --hover: rgba(255, 255, 255, .05);
   --sidebar: #0a1230;
   --glass: rgba(12, 23, 56, .72);
@@ -213,6 +233,7 @@ button {
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg: #eef2f9;
   --bg-2: #e7edf7;
   --panel: #ffffff;
@@ -228,9 +249,11 @@ button {
   --accent-rgb: 8, 145, 178;
   --accent-soft: rgba(8, 145, 178, .12);
   --positive: #16a34a;
+  --positive-rgb: 22, 163, 74;
   --negative: #e11d48;
   --negative-rgb: 225, 29, 72;
   --warning: #b45309;
+  --warning-rgb: 180, 83, 9;
   --hover: rgba(9, 20, 54, .045);
   --sidebar: #ffffff;
   --glass: rgba(255, 255, 255, .78);
@@ -459,6 +482,12 @@ button {
   color: var(--negative);
 }
 
+.banner-warning {
+  background: rgba(var(--warning-rgb), 0.12);
+  border: 1px solid var(--warning);
+  color: var(--warning);
+}
+
 /* ------------------------------ Chrome flotante (vidrio) ------------------------------ */
 /* Reservado para elementos que flotan sobre el contenido — topbar,
    switchers, tarjeta de login variante C. Los paneles de contenido NO
@@ -487,7 +516,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  background: radial-gradient(circle at 50% 50%, #123a63 0%, #070b1a 70%);
+  background: var(--bg);
 }
 
 .login-split {
@@ -763,7 +792,7 @@ button {
   padding: 40px 34px;
   border-radius: 20px;
   color: var(--text);
-  border: 1px solid rgba(255, 255, 255, .12);
+  border: 1px solid var(--card-line);
   box-shadow: 0 40px 80px -30px rgba(0, 0, 0, .6);
   text-align: center;
 }
@@ -1156,6 +1185,19 @@ button {
   margin: 6px 0 0;
   font-size: 22px;
   font-weight: 700;
+}
+
+.stat-tile.is-clickable {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  transition: opacity .15s ease, border-color .15s ease, background-color .15s ease;
+}
+
+.stat-tile.is-clickable.is-dimmed {
+  opacity: .55;
 }
 
 /* ------------------- Dashboard: distribución de gastos ------------------- */

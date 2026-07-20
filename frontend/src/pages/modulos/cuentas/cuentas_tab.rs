@@ -204,6 +204,15 @@ where
                             "Disponible de " {format!("{} {:.2}", cuenta.currency, limite)}
                             " · usado " {format!("{:.2}", usado)}
                         </p>
+                        {match (cuenta.cutoff_day, cuenta.payment_due_day) {
+                            (Some(corte), Some(pago)) => view! {
+                                <p class="text-faint" style="margin:2px 0 0; font-size:12px;">
+                                    "Corte: día " {corte} " · Pago límite: día " {pago}
+                                </p>
+                            }
+                            .into_any(),
+                            _ => ().into_any(),
+                        }}
                         <p class="text-faint" style="margin:2px 0 0; font-size:12px;">
                             {if cuenta.is_active { "Activa" } else { "Inactiva" }}
                         </p>
@@ -285,6 +294,20 @@ where
             .map(|l| l.to_string())
             .unwrap_or_default(),
     );
+    let dia_corte = RwSignal::new(
+        cuenta_existente
+            .as_ref()
+            .and_then(|c| c.cutoff_day)
+            .map(|d| d.to_string())
+            .unwrap_or_default(),
+    );
+    let dia_pago = RwSignal::new(
+        cuenta_existente
+            .as_ref()
+            .and_then(|c| c.payment_due_day)
+            .map(|d| d.to_string())
+            .unwrap_or_default(),
+    );
     let error = RwSignal::new(None::<String>);
     let guardando = RwSignal::new(false);
 
@@ -326,6 +349,28 @@ where
             None
         };
 
+        // Día de corte y día límite de pago: obligatorios solo para
+        // tarjetas de crédito, mismo criterio que credit_limit.
+        let (cutoff_day, payment_due_day) = if tipo.get_untracked() == "credit" {
+            let dia_valido = |texto: String| -> Option<i16> {
+                texto.parse::<i16>().ok().filter(|d| (1..=31).contains(d))
+            };
+            match (
+                dia_valido(dia_corte.get_untracked()),
+                dia_valido(dia_pago.get_untracked()),
+            ) {
+                (Some(corte), Some(pago)) => (Some(corte), Some(pago)),
+                _ => {
+                    error.set(Some(
+                        "Las tarjetas de crédito requieren día de corte y día límite de pago entre 1 y 31".to_string(),
+                    ));
+                    return;
+                }
+            }
+        } else {
+            (None, None)
+        };
+
         guardando.set(true);
         leptos::task::spawn_local(async move {
             let Some(token) = token_vigente(auth).await else {
@@ -344,6 +389,8 @@ where
                         currency: &moneda.get_untracked(),
                         is_active: activa.get_untracked(),
                         credit_limit,
+                        cutoff_day,
+                        payment_due_day,
                     },
                     &token,
                 )
@@ -358,6 +405,8 @@ where
                         balance,
                         currency: Some(&moneda.get_untracked()),
                         credit_limit,
+                        cutoff_day,
+                        payment_due_day,
                     },
                     &token,
                 )
@@ -416,6 +465,28 @@ where
                             inputmode="decimal"
                             prop:value=move || limite_credito.get()
                             on:input=move |ev| limite_credito.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="field">
+                        <label>"Día de corte"</label>
+                        <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            placeholder="1-31"
+                            prop:value=move || dia_corte.get()
+                            on:input=move |ev| dia_corte.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="field">
+                        <label>"Día límite de pago"</label>
+                        <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            placeholder="1-31"
+                            prop:value=move || dia_pago.get()
+                            on:input=move |ev| dia_pago.set(event_target_value(&ev))
                         />
                     </div>
                 </Show>

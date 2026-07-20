@@ -1,6 +1,13 @@
 //! Accesos rápidos: últimas transacciones y próximos eventos de agenda
 //! — reusa las llamadas ya existentes de `accounting`/`agenda`, solo
 //! recorta a un puñado de filas para la vista de resumen.
+//!
+//! `filtro_tipo` (compartido con `home/kpis.rs`) filtra las
+//! transacciones recientes por tipo ("income"/"expense") cuando el
+//! usuario hace clic en un stat-tile de Kpis. A propósito, este filtro
+//! NO se cruza con ningún rango de fecha: esta sección nunca filtró
+//! por fecha (siempre trae "las últimas N"), y seguir ese mismo
+//! criterio con el tipo es intencional, no un bug a corregir.
 
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -15,7 +22,7 @@ fn nombre_categoria(categorias: &[accounting::Categoria], id: Option<Uuid>) -> S
 }
 
 #[component]
-pub fn AccesosRapidos(workspace_id: Uuid) -> impl IntoView {
+pub fn AccesosRapidos(workspace_id: Uuid, filtro_tipo: RwSignal<Option<String>>) -> impl IntoView {
     let auth = use_auth();
 
     let categorias = LocalResource::new(move || async move {
@@ -27,6 +34,8 @@ pub fn AccesosRapidos(workspace_id: Uuid) -> impl IntoView {
             .unwrap_or_default()
     });
 
+    // Trae más de las 5 que se muestran para que, al filtrar por tipo
+    // en el cliente (sin refetch), sigan quedando hasta 5 relevantes.
     let recientes = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
             return Err("Sesión vencida".to_string());
@@ -37,9 +46,22 @@ pub fn AccesosRapidos(workspace_id: Uuid) -> impl IntoView {
             &token,
         )
         .await
-        .map(|lista| lista.into_iter().take(5).collect::<Vec<_>>())
+        .map(|lista| lista.into_iter().take(20).collect::<Vec<_>>())
         .map_err(|e| e.to_string())
     });
+
+    let recientes_filtradas = move || {
+        let filtro = filtro_tipo.get();
+        recientes.get().map(|resultado| {
+            resultado.map(|lista| {
+                lista
+                    .into_iter()
+                    .filter(|t| filtro.as_deref().is_none_or(|f| t.tipo == f))
+                    .take(5)
+                    .collect::<Vec<_>>()
+            })
+        })
+    };
 
     let proximos = LocalResource::new(move || async move {
         let Some(token) = token_vigente(auth).await else {
@@ -64,7 +86,7 @@ pub fn AccesosRapidos(workspace_id: Uuid) -> impl IntoView {
                 <div class="panel-head"><h3>"Transacciones recientes"</h3></div>
                 {move || {
                     let categorias_ok = categorias.get().unwrap_or_default();
-                    match recientes.get() {
+                    match recientes_filtradas() {
                         None => view! { <p class="text-soft">"Cargando..."</p> }.into_any(),
                         Some(Err(mensaje)) => view! { <p class="banner banner-error">{mensaje}</p> }.into_any(),
                         Some(Ok(lista)) if lista.is_empty() => {

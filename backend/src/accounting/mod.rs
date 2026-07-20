@@ -6,7 +6,7 @@
 // desde el workspace y del tipo esperado".
 pub(crate) mod categorias;
 mod presupuestos;
-mod suscripciones;
+pub(crate) mod suscripciones;
 mod transacciones;
 
 pub mod models;
