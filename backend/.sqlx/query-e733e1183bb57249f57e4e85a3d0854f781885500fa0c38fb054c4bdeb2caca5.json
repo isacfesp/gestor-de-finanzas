@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO accounts (workspace_id, owner_id, name, type, balance, currency, credit_limit)\n           VALUES ($1, $2, $3, $4, $5, $6, $7)\n           RETURNING id, workspace_id, owner_id, name, type AS \"tipo\", balance, currency,\n                     is_active, credit_limit, created_at",
+  "query": "SELECT id, workspace_id, owner_id, name, type AS \"tipo\", balance, currency,\n                  is_active, credit_limit, cutoff_day, payment_due_day, created_at\n           FROM accounts\n           WHERE workspace_id = $1\n             AND ($2::bool IS NULL OR is_active = $2)\n             AND ($3::uuid IS NULL OR owner_id = $3)\n           ORDER BY name",
   "describe": {
     "columns": [
       {
@@ -50,6 +50,16 @@
       },
       {
         "ordinal": 9,
+        "name": "cutoff_day",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 10,
+        "name": "payment_due_day",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
@@ -57,12 +67,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid",
-        "Text",
-        "Text",
-        "Numeric",
-        "Text",
-        "Numeric"
+        "Bool",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -75,8 +81,10 @@
       false,
       false,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "7167fe284f77a8e528b4866c573e359ed1af49e6f79272e890df56e7f12fc7b1"
+  "hash": "e733e1183bb57249f57e4e85a3d0854f781885500fa0c38fb054c4bdeb2caca5"
 }

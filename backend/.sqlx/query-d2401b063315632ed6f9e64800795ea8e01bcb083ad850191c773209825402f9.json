@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, owner_id, name, principal, gat_annual_rate,\n                  isr_annual_rate, interest_type, start_date, term_days, end_date,\n                  is_active, created_at\n           FROM investments\n           WHERE workspace_id = $1\n             AND ($2::bool IS NULL OR is_active = $2)\n             AND ($3::uuid IS NULL OR owner_id = $3)\n           ORDER BY start_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "principal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "gat_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "isr_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "interest_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "term_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "end_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 11,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d2401b063315632ed6f9e64800795ea8e01bcb083ad850191c773209825402f9"
+}

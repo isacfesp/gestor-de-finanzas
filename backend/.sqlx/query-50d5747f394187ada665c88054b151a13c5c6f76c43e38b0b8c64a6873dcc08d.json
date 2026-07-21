@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH accruals AS (\n               SELECT investment_id,\n                      SUM(gross_yield) AS gross_yield,\n                      SUM(isr_amount) AS isr_amount,\n                      SUM(net_yield) AS net_yield\n               FROM investment_accruals\n               GROUP BY investment_id\n           )\n           SELECT\n               COALESCE(SUM(i.principal), 0) AS \"principal_invertido!\",\n               COALESCE(SUM(a.gross_yield), 0) AS \"gross_yield_acumulado!\",\n               COALESCE(SUM(a.isr_amount), 0) AS \"isr_acumulado!\",\n               COALESCE(SUM(a.net_yield), 0) AS \"net_yield_acumulado!\"\n           FROM investments i\n           LEFT JOIN accruals a ON a.investment_id = i.id\n           WHERE i.workspace_id = $1 AND i.is_active = true\n             AND ($2::uuid IS NULL OR i.owner_id = $2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "principal_invertido!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "gross_yield_acumulado!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "isr_acumulado!",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "net_yield_acumulado!",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "50d5747f394187ada665c88054b151a13c5c6f76c43e38b0b8c64a6873dcc08d"
+}

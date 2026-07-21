@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, workspace_id, name, cutoff_day AS \"cutoff_day!\", payment_due_day AS \"payment_due_day!\"\n           FROM accounts\n           WHERE type = 'credit' AND is_active = true\n             AND cutoff_day IS NOT NULL AND payment_due_day IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "cutoff_day!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "payment_due_day!",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "fe1b6b04fc4e3f0fd0333cc5520e0bcf4d06c6be416177d6afe5e75cc9b91ce4"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO investment_accruals\n                   (investment_id, accrual_date, gross_yield, isr_amount, net_yield)\n               VALUES ($1, $2, $3, $4, $5)\n               ON CONFLICT (investment_id, accrual_date) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Numeric",
+        "Numeric",
+        "Numeric"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bdf3a9c8d8cdf940092931c0642789bf47db83adaa786a8bfcbb1239f71682db"
+}

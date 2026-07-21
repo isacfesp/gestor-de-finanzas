@@ -1,0 +1,63 @@
+# Orquestación de PRODUCCIÓN para el VPS propio (no confundir con
+# docker-compose.yml, que Easypanel construye directo desde el repo). Acá
+# no se compila nada: "app" y "frontend" son imágenes ya armadas por
+# GitHub Actions (backend/docker/Dockerfile.prod y
+# frontend/docker/Dockerfile.prod) y publicadas en GHCR — el VPS solo
+# corre:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# El nginx del host (fuera de este compose, con el certificado de
+# Cloudflare) recibe el tráfico del dominio y hace proxy_pass a
+# 127.0.0.1:${FRONTEND_PORT}. Solo "frontend" publica puerto al host —
+# "app" y "db" quedan solo en la red interna de compose, el frontend le
+# llega a "app" por nombre de servicio (BACKEND_HOST=app, ya es el
+# default de esa imagen).
+#
+# Variables leídas de un .env que vive solo en el VPS (mismas claves que
+# .env.example, más FRONTEND_PORT que no existe ahí porque en dev el
+# frontend no corre detrás de este proxy).
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    image: ghcr.io/isacfesp/gestor-de-finanzas-backend:latest
+    restart: always
+    environment:
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      PORT: ${PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      DEV_EMAIL: ${DEV_EMAIL}
+      DEV_PASSWORD: ${DEV_PASSWORD}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/isacfesp/gestor-de-finanzas-frontend:latest
+    restart: always
+    environment:
+      BACKEND_HOST: app
+      BACKEND_PORT: ${PORT}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT}:80"
+    depends_on:
+      - app
+
+volumes:
+  db_data:

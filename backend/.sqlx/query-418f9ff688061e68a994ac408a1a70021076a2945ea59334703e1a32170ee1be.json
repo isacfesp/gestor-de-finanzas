@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE accounts\n           SET name = $1, type = $2, currency = $3, is_active = $4, credit_limit = $5\n           WHERE id = $6 AND workspace_id = $7\n           RETURNING id, workspace_id, owner_id, name, type AS \"tipo\", balance, currency,\n                     is_active, credit_limit, created_at",
+  "query": "INSERT INTO accounts\n               (workspace_id, owner_id, name, type, balance, currency, credit_limit,\n                cutoff_day, payment_due_day)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n           RETURNING id, workspace_id, owner_id, name, type AS \"tipo\", balance, currency,\n                     is_active, credit_limit, cutoff_day, payment_due_day, created_at",
   "describe": {
     "columns": [
       {
@@ -50,19 +50,31 @@
       },
       {
         "ordinal": 9,
+        "name": "cutoff_day",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 10,
+        "name": "payment_due_day",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Text",
-        "Text",
-        "Bool",
-        "Numeric",
         "Uuid",
-        "Uuid"
+        "Uuid",
+        "Text",
+        "Text",
+        "Numeric",
+        "Text",
+        "Numeric",
+        "Int2",
+        "Int2"
       ]
     },
     "nullable": [
@@ -75,8 +87,10 @@
       false,
       false,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "58573f00474970401c12921303627ce34b80366d130d4821a94a24d83cfd25b9"
+  "hash": "418f9ff688061e68a994ac408a1a70021076a2945ea59334703e1a32170ee1be"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, workspace_id, owner_id, name, type AS \"tipo\", balance, currency,\n                  is_active, credit_limit, created_at\n           FROM accounts\n           WHERE workspace_id = $1\n             AND ($2::bool IS NULL OR is_active = $2)\n             AND ($3::uuid IS NULL OR owner_id = $3)\n           ORDER BY name",
+  "query": "UPDATE accounts\n           SET name = $1, type = $2, currency = $3, is_active = $4, credit_limit = $5,\n               cutoff_day = $6, payment_due_day = $7\n           WHERE id = $8 AND workspace_id = $9\n           RETURNING id, workspace_id, owner_id, name, type AS \"tipo\", balance, currency,\n                     is_active, credit_limit, cutoff_day, payment_due_day, created_at",
   "describe": {
     "columns": [
       {
@@ -50,14 +50,30 @@
       },
       {
         "ordinal": 9,
+        "name": "cutoff_day",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 10,
+        "name": "payment_due_day",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 11,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
+        "Text",
+        "Text",
+        "Text",
         "Bool",
+        "Numeric",
+        "Int2",
+        "Int2",
+        "Uuid",
         "Uuid"
       ]
     },
@@ -71,8 +87,10 @@
       false,
       false,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "0dbc1904fcaa143cb9d3d2afd111f2e055cfe46ad71b360027a0eed7945c02e3"
+  "hash": "6bb424b3dc232c435759128c6b9d5bed4c658208bfc38efd549c167ca81c8fcf"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT principal, gat_annual_rate, interest_type, term_days\n           FROM investments\n           WHERE id = $1 AND workspace_id = $2\n             AND ($3::uuid IS NULL OR owner_id = $3)",
+  "query": "SELECT principal, gat_annual_rate, isr_annual_rate, interest_type, term_days\n           FROM investments\n           WHERE id = $1 AND workspace_id = $2\n             AND ($3::uuid IS NULL OR owner_id = $3)",
   "describe": {
     "columns": [
       {
@@ -15,11 +15,16 @@
       },
       {
         "ordinal": 2,
+        "name": "isr_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
         "name": "interest_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "term_days",
         "type_info": "Int4"
       }
@@ -35,8 +40,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "01d9d3a9a5f514b87d41110ed38e8b41f2171cfbd58a056607b2682d7c0e0001"
+  "hash": "6fe4492d18536705ed2e1987e5df4a0f6baa288e13733275a1b162301f112fc7"
 }

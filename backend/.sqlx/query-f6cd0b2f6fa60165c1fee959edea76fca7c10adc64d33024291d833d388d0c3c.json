@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, principal, gat_annual_rate, isr_annual_rate, interest_type,\n                  start_date, end_date\n           FROM investments\n           WHERE is_active = true AND start_date <= $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "principal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 2,
+        "name": "gat_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "isr_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 4,
+        "name": "interest_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "start_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 6,
+        "name": "end_date",
+        "type_info": "Date"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f6cd0b2f6fa60165c1fee959edea76fca7c10adc64d33024291d833d388d0c3c"
+}

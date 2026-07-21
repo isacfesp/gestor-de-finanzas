@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO investments\n               (workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,\n                start_date, term_days, end_date)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n           RETURNING id, workspace_id, owner_id, name, principal, gat_annual_rate, interest_type,\n                     start_date, term_days, end_date, is_active, created_at",
+  "query": "UPDATE investments\n           SET name = $1, principal = $2, gat_annual_rate = $3, isr_annual_rate = $4,\n               interest_type = $5, start_date = $6, term_days = $7, end_date = $8\n           WHERE id = $9 AND workspace_id = $10\n           RETURNING id, workspace_id, owner_id, name, principal, gat_annual_rate,\n                     isr_annual_rate, interest_type, start_date, term_days, end_date,\n                     is_active, created_at",
   "describe": {
     "columns": [
       {
@@ -35,46 +35,52 @@
       },
       {
         "ordinal": 6,
+        "name": "isr_annual_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
         "name": "interest_type",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "start_date",
         "type_info": "Date"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "term_days",
         "type_info": "Int4"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "end_date",
         "type_info": "Date"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "is_active",
         "type_info": "Bool"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
-        "Uuid",
         "Text",
+        "Numeric",
         "Numeric",
         "Numeric",
         "Text",
         "Date",
         "Int4",
-        "Date"
+        "Date",
+        "Uuid",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -89,8 +95,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "00631329eb00e2e7116e9f859c38e6c639bbc7155a60b6b1014d29e2680bdbeb"
+  "hash": "c80fca1e9270797bd745be0e910d8e3f560bcac3b620d6e24d5477a49e1cef74"
 }
