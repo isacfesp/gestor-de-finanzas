@@ -58,6 +58,9 @@ pub async fn eliminar_workspace(workspace_id: Uuid, token: &str) -> Result<(), A
 /// `/admin/usuarios` — distinto de `api::auth::Usuario` (que es lo
 /// mínimo que necesita la sesión), porque aquí sí hace falta
 /// `is_active` para decidir si mostrar "Desactivar" o "Reactivar".
+// created_at refleja el struct del backend 1:1 aunque la UI todavía no
+// muestre la fecha de alta.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct UsuarioAdmin {
     pub id: Uuid,
@@ -106,6 +109,9 @@ pub struct AsignarMiembroDatos<'a> {
     pub role: &'a str,
 }
 
+// Refleja 1:1 el JSON del backend; la UI solo revisa si la llamada dio
+// Ok, no lee estos campos.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct MiembroAsignado {
     pub mensaje: String,
@@ -169,6 +175,8 @@ pub struct CrearInvitacionDatos<'a> {
 /// no hay forma de volver a pedirlo después.
 #[derive(Debug, Clone, Deserialize)]
 pub struct InvitacionCreada {
+    // Refleja el JSON del backend 1:1; la UI no muestra este mensaje.
+    #[allow(dead_code)]
     pub mensaje: String,
     pub token: String,
     pub expira: DateTime<Utc>,

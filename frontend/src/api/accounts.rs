@@ -60,6 +60,9 @@ pub struct ActualizarCuentaDatos<'a> {
 
 /// Fila de `GET /cuentas/alertas-tarjeta`: una tarjeta de crédito cuya
 /// fecha de corte o de pago límite cae dentro de la ventana de aviso.
+// account_id/credit_limit reflejan el struct del backend 1:1 aunque la
+// UI todavía no los muestre.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct AlertaTarjeta {
     pub account_id: Uuid,
@@ -144,6 +147,9 @@ pub async fn listar_miembros(
 /// nombre de ambas cuentas ya resuelto por el backend (JOIN) — las
 /// cuentas son personales, así que el frontend ya no puede resolverlo
 /// cruzando `GET .../cuentas` (un member solo recibe las suyas).
+// from_account_id/to_account_id reflejan el struct del backend 1:1; la
+// UI solo muestra los nombres ya resueltos por el JOIN.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Transferencia {
     pub from_account_id: Uuid,

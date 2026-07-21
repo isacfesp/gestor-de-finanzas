@@ -88,6 +88,10 @@ pub fn ProtectedShell() -> impl IntoView {
         });
     };
 
+    // Aparte para que el macro `view!` no confunda el `>` de la
+    // comparación con el cierre de una etiqueta.
+    let hay_varios_workspaces = move || workspace.lista().len() > 1;
+
     // Se resuelve una sola vez, en cuanto hay sesión (el shell envuelve
     // todas las rutas protegidas y no se vuelve a montar al navegar
     // entre ellas). Ver `crate::workspace::cargar_activo`.
@@ -142,7 +146,7 @@ pub fn ProtectedShell() -> impl IntoView {
                 <div class="flex min-w-0 flex-1 flex-col">
                     <header class="sticky top-0 z-20 flex items-center gap-4 border-b border-line px-4 pb-4 pt-[calc(16px+env(safe-area-inset-top))] md:px-[30px] md:pb-[18px] md:pt-[calc(18px+env(safe-area-inset-top))]">
                         <Show
-                            when=move || (workspace.lista().len() > 1)
+                            when=hay_varios_workspaces
                             fallback=move || view! {
                                 <Show when=move || workspace.nombre().is_some()>
                                     <span class="font-mono text-[11px] font-semibold text-faint">{move || workspace.nombre().unwrap_or_default()}</span>

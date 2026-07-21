@@ -118,44 +118,6 @@ pub(crate) fn proxima_ocurrencia_dia_mes(hoy: NaiveDate, dia: u32) -> NaiveDate 
         .expect("candidato ya está acotado al último día real del mes siguiente")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dia_31_en_febrero_usa_el_ultimo_dia_real() {
-        let hoy = NaiveDate::from_ymd_opt(2026, 2, 1).unwrap();
-        assert_eq!(
-            proxima_ocurrencia_dia_mes(hoy, 31),
-            NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
-        );
-    }
-
-    #[test]
-    fn dia_31_en_febrero_bisiesto() {
-        let hoy = NaiveDate::from_ymd_opt(2028, 2, 1).unwrap();
-        assert_eq!(
-            proxima_ocurrencia_dia_mes(hoy, 31),
-            NaiveDate::from_ymd_opt(2028, 2, 29).unwrap()
-        );
-    }
-
-    #[test]
-    fn hoy_cae_justo_en_el_dia_devuelve_hoy() {
-        let hoy = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
-        assert_eq!(proxima_ocurrencia_dia_mes(hoy, 15), hoy);
-    }
-
-    #[test]
-    fn rollover_normal_de_mes() {
-        let hoy = NaiveDate::from_ymd_opt(2026, 7, 20).unwrap();
-        assert_eq!(
-            proxima_ocurrencia_dia_mes(hoy, 5),
-            NaiveDate::from_ymd_opt(2026, 8, 5).unwrap()
-        );
-    }
-}
-
 /// Confirma que `account_id` existe en `workspace_id` Y pertenece a
 /// `owner_id`. Operar sobre la cuenta de otro se trata igual que
 /// "cuenta inexistente" (las cuentas son personales).
@@ -505,4 +467,42 @@ pub async fn alertas_tarjeta(
         .collect();
 
     Ok(Json(alertas))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dia_31_en_febrero_usa_el_ultimo_dia_real() {
+        let hoy = NaiveDate::from_ymd_opt(2026, 2, 1).unwrap();
+        assert_eq!(
+            proxima_ocurrencia_dia_mes(hoy, 31),
+            NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
+        );
+    }
+
+    #[test]
+    fn dia_31_en_febrero_bisiesto() {
+        let hoy = NaiveDate::from_ymd_opt(2028, 2, 1).unwrap();
+        assert_eq!(
+            proxima_ocurrencia_dia_mes(hoy, 31),
+            NaiveDate::from_ymd_opt(2028, 2, 29).unwrap()
+        );
+    }
+
+    #[test]
+    fn hoy_cae_justo_en_el_dia_devuelve_hoy() {
+        let hoy = NaiveDate::from_ymd_opt(2026, 7, 15).unwrap();
+        assert_eq!(proxima_ocurrencia_dia_mes(hoy, 15), hoy);
+    }
+
+    #[test]
+    fn rollover_normal_de_mes() {
+        let hoy = NaiveDate::from_ymd_opt(2026, 7, 20).unwrap();
+        assert_eq!(
+            proxima_ocurrencia_dia_mes(hoy, 5),
+            NaiveDate::from_ymd_opt(2026, 8, 5).unwrap()
+        );
+    }
 }
