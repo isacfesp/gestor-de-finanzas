@@ -27,6 +27,8 @@ pub mod acciones {
     pub const BOOTSTRAP_DEV: &str = "bootstrap_dev";
     pub const USUARIO_DESACTIVADO: &str = "usuario_desactivado";
     pub const USUARIO_REACTIVADO: &str = "usuario_reactivado";
+    pub const RECUPERACION_SOLICITADA: &str = "recuperacion_solicitada";
+    pub const PASSWORD_RESETEADO: &str = "password_reseteado";
 
     // accounts
     pub const CUENTA_CREADA: &str = "cuenta_creada";

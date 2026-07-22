@@ -113,3 +113,35 @@ pub async fn aceptar_invitacion(token: &str, name: &str, password: &str) -> Resu
     .await?;
     Ok(())
 }
+
+#[derive(Serialize)]
+struct SolicitarRecuperacionDatos<'a> {
+    email: &'a str,
+}
+
+/// POST /auth/solicitar-recuperacion — pide el link de recuperación de
+/// contraseña. Responde 204 exista o no el email: nunca revela si una
+/// cuenta está registrada.
+pub async fn solicitar_recuperacion(email: &str) -> Result<(), ApiError> {
+    client::post_publico_sin_respuesta(
+        "/auth/solicitar-recuperacion",
+        &SolicitarRecuperacionDatos { email },
+    )
+    .await
+}
+
+#[derive(Serialize)]
+struct RecuperarPasswordDatos<'a> {
+    token: &'a str,
+    password: &'a str,
+}
+
+/// POST /auth/recuperar-password — canjea el token del correo y fija la
+/// contraseña nueva. Cierra todas las sesiones activas del usuario.
+pub async fn recuperar_password(token: &str, password: &str) -> Result<(), ApiError> {
+    client::post_publico_sin_respuesta(
+        "/auth/recuperar-password",
+        &RecuperarPasswordDatos { token, password },
+    )
+    .await
+}

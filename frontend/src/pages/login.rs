@@ -55,9 +55,12 @@ pub fn Login() -> impl IntoView {
     let recordar = RwSignal::new(true);
 
     // `?invitado=1` lo agrega el redirect de AceptarInvitacion al
-    // canjear una invitación con éxito, para mostrar el aviso de abajo.
+    // canjear una invitación con éxito, y `?reset=1` el de
+    // RecuperarPassword al fijar una contraseña nueva — ambos solo para
+    // mostrar el aviso de abajo.
     let query = use_query_map();
     let viene_de_invitacion = move || query.with(|q| q.get("invitado").is_some());
+    let viene_de_reset = move || query.with(|q| q.get("reset").is_some());
 
     // new_unsync: los futures que llaman a `fetch` desde el navegador no
     // son Send (WASM es de un solo hilo), así que se usa la variante de
@@ -99,6 +102,9 @@ pub fn Login() -> impl IntoView {
 
                     <Show when=viene_de_invitacion>
                         <p class="banner">"Cuenta creada, ya puedes iniciar sesión."</p>
+                    </Show>
+                    <Show when=viene_de_reset>
+                        <p class="banner">"Contraseña actualizada, ya puedes iniciar sesión."</p>
                     </Show>
 
                     <form on:submit=move |ev| {
@@ -157,7 +163,7 @@ pub fn Login() -> impl IntoView {
                                 </span>
                                 "Recordarme"
                             </button>
-                            <a href="#" class="login-forgot-link">"¿Olvidaste tu contraseña?"</a>
+                            <a href="/recuperar-password" class="login-forgot-link">"¿Olvidaste tu contraseña?"</a>
                         </div>
 
                         <Show when=move || mensaje_error().is_some()>

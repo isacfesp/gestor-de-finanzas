@@ -57,6 +57,21 @@ pub async fn post_publico<B: Serialize, T: DeserializeOwned>(
     decodificar(respuesta).await
 }
 
+/// POST sin autenticación cuya respuesta no trae cuerpo (204), como
+/// solicitar o completar la recuperación de contraseña.
+pub async fn post_publico_sin_respuesta<B: Serialize>(
+    path: &str,
+    cuerpo: &B,
+) -> Result<(), ApiError> {
+    let respuesta = Request::post(path)
+        .json(cuerpo)
+        .map_err(|e| ApiError::Red(e.to_string()))?
+        .send()
+        .await
+        .map_err(|e| ApiError::Red(e.to_string()))?;
+    confirmar(respuesta).await
+}
+
 // post/put/delete aún no los consume ningún módulo (solo auth usa GET
 // y los dos POST de abajo), pero son la base con la que accounts,
 // goals, investments, etc. van a crear/editar/borrar sus recursos.

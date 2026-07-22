@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::auditoria::{self, acciones};
 use crate::auth::extractores::SoloDev;
 use crate::auth::tokens;
+use crate::correo;
 use crate::errores::AppError;
 use crate::users::models::{RespuestaUsuario, User};
 use crate::users::servicio;
@@ -320,10 +321,26 @@ pub async fn crear_invitacion(
     )
     .await;
 
+    // Best effort: si Resend falla, la invitación ya quedó creada y el
+    // token en la respuesta sigue sirviendo como respaldo manual.
+    let link = format!(
+        "{}/invitaciones/aceptar?token={token}",
+        correo::frontend_origin()
+    );
+    if let Err(e) = correo::enviar(
+        &email,
+        "Te invitaron a un workspace",
+        &correo::plantilla_invitacion(&link),
+    )
+    .await
+    {
+        eprintln!("AVISO: no se pudo enviar el correo de invitación a {email}: {e}");
+    }
+
     Ok((
         StatusCode::CREATED,
         Json(json!({
-            "mensaje": "Invitación creada; comparte el token por un canal seguro",
+            "mensaje": "Invitación enviada; si no llega, comparte este token manualmente",
             "token": token,
             "expira": expira,
         })),

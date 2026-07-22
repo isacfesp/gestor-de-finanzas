@@ -18,6 +18,7 @@ use crate::auditoria::{self, acciones};
 use crate::auth::extractores::UsuarioAutenticado;
 use crate::auth::jwt::{DURACION_ACCESS_MIN, emitir_access_token};
 use crate::auth::tokens;
+use crate::correo;
 use crate::errores::AppError;
 use crate::users::models::RespuestaUsuario;
 use crate::users::servicio;
@@ -416,4 +417,142 @@ pub async fn aceptar_invitacion(
             "workspace_id": invitacion.workspace_id,
         })),
     ))
+}
+
+// ------------------------- POST /auth/solicitar-recuperacion -------------------------
+
+#[derive(Deserialize)]
+pub struct SolicitarRecuperacionDatos {
+    pub email: String,
+}
+
+/// Pide un link para restablecer la contraseña.
+///
+/// Responde 204 exista o no el email (mismo criterio anti-enumeración
+/// que `login`): solo si existe y está activo se genera el token y se
+/// envía el correo.
+pub async fn solicitar_recuperacion(
+    State(pool): State<PgPool>,
+    Json(datos): Json<SolicitarRecuperacionDatos>,
+) -> Result<StatusCode, AppError> {
+    let mut conexion = pool.acquire().await?;
+    let usuario = servicio::buscar_por_email(&mut conexion, &datos.email)
+        .await
+        .unwrap_or_default();
+
+    if let Some(usuario) = usuario
+        && usuario.is_active
+    {
+        let token = tokens::generar_token_opaco();
+        let expira = Utc::now() + chrono::Duration::hours(tokens::DURACION_RESET_HORAS);
+
+        sqlx::query!(
+            "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+             VALUES ($1, $2, $3)",
+            usuario.id,
+            tokens::hash_token(&token),
+            expira
+        )
+        .execute(&pool)
+        .await?;
+
+        let link = format!(
+            "{}/recuperar-password?token={token}",
+            correo::frontend_origin()
+        );
+        if let Err(e) = correo::enviar(
+            &usuario.email,
+            "Recupera tu contraseña",
+            &correo::plantilla_recuperacion(&link),
+        )
+        .await
+        {
+            eprintln!(
+                "AVISO: no se pudo enviar el correo de recuperación a {}: {e}",
+                usuario.email
+            );
+        }
+
+        auditoria::registrar(
+            &pool,
+            None,
+            Some(usuario.id),
+            acciones::RECUPERACION_SOLICITADA,
+            json!({}),
+        )
+        .await;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ------------------------- POST /auth/recuperar-password -------------------------
+
+#[derive(Deserialize)]
+pub struct RecuperarPasswordDatos {
+    pub token: String,
+    pub password: String,
+}
+
+/// Canjea un link de recuperación: fija la contraseña nueva y cierra
+/// todas las sesiones activas del usuario (por si el token viejo se
+/// filtró junto con la contraseña).
+pub async fn recuperar_password(
+    State(pool): State<PgPool>,
+    Json(datos): Json<RecuperarPasswordDatos>,
+) -> Result<StatusCode, AppError> {
+    servicio::validar_password(&datos.password)?;
+    let hash_recibido = tokens::hash_token(&datos.token);
+
+    let fila = sqlx::query!(
+        "SELECT id, user_id, expires_at, used_at
+         FROM password_reset_tokens WHERE token_hash = $1",
+        hash_recibido
+    )
+    .fetch_optional(&pool)
+    .await?;
+
+    // Inválido, ya usado o vencido → mismo mensaje en los tres casos.
+    let fila = match fila {
+        Some(f) if f.used_at.is_none() && f.expires_at > Utc::now() => f,
+        _ => {
+            return Err(AppError::NoAutorizado(
+                "Link de recuperación inválido o expirado".to_string(),
+            ));
+        }
+    };
+
+    let hash_password = bcrypt::hash(&datos.password, bcrypt::DEFAULT_COST)?;
+
+    let mut tx = pool.begin().await?;
+    sqlx::query!(
+        "UPDATE users SET password_hash = $1 WHERE id = $2",
+        hash_password,
+        fila.user_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE password_reset_tokens SET used_at = now() WHERE id = $1",
+        fila.id
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    // Fuera de la transacción: revoca sesiones activas, no forma parte
+    // del cambio atómico de contraseña.
+    tokens::revocar_todos_los_refresh(&pool, fila.user_id).await?;
+
+    auditoria::registrar(
+        &pool,
+        None,
+        Some(fila.user_id),
+        acciones::PASSWORD_RESETEADO,
+        json!({}),
+    )
+    .await;
+
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -7,7 +7,9 @@ use leptos_router::path;
 
 use crate::components::ProtectedShell;
 use crate::components::theme::provide_theme_context;
-use crate::pages::{AceptarInvitacion, AdminPage, Home, Login, NotFound, PerfilPage, modulos};
+use crate::pages::{
+    AceptarInvitacion, AdminPage, Home, Login, NotFound, PerfilPage, RecuperarPassword, modulos,
+};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -20,6 +22,7 @@ pub fn App() -> impl IntoView {
             <Routes fallback=|| view! { <NotFound/> }>
                 <Route path=path!("/login") view=Login/>
                 <Route path=path!("/invitaciones/aceptar") view=AceptarInvitacion/>
+                <Route path=path!("/recuperar-password") view=RecuperarPassword/>
 
                 // Todo lo que cuelga de "/" pasa primero por ProtectedShell,
                 // que exige sesión y dibuja el encabezado + navegación antes

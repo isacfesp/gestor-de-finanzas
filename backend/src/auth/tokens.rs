@@ -19,6 +19,9 @@ use crate::errores::AppError;
 pub const DURACION_REFRESH_DIAS: i64 = 30;
 /// Horas de vida de un link de invitación.
 pub const DURACION_INVITACION_HORAS: i64 = 72;
+/// Horas de vida de un link de recuperación de contraseña — corto
+/// porque es un flujo sensible (permite cambiar la contraseña).
+pub const DURACION_RESET_HORAS: i64 = 1;
 
 /// Genera un token aleatorio de 32 bytes en formato hexadecimal.
 ///

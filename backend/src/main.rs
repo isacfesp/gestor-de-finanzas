@@ -4,6 +4,7 @@ mod admin;
 mod analytics;
 mod auditoria;
 mod auth;
+mod correo;
 mod errores;
 mod goals;
 mod investments;

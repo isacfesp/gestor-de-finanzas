@@ -16,6 +16,7 @@ use uuid::Uuid;
 use crate::accounting::suscripciones;
 use crate::accounts::proxima_ocurrencia_dia_mes;
 use crate::auditoria::{self, acciones};
+use crate::correo;
 
 /// Días de anticipación para avisar de un cobro próximo.
 const DIAS_AVISO_SUSCRIPCION: i64 = 3;
@@ -190,7 +191,38 @@ async fn crear_notificacion(
     )
     .execute(pool)
     .await?;
+
+    enviar_alerta_por_correo(pool, workspace_id, title, body).await;
     Ok(())
+}
+
+/// Envía la misma alerta por correo a cada miembro activo del
+/// workspace. Best effort: un fallo de Resend (o de la consulta de
+/// miembros) solo se loggea, nunca interrumpe el ciclo de recordatorios.
+async fn enviar_alerta_por_correo(pool: &PgPool, workspace_id: Uuid, title: &str, body: &str) {
+    let miembros = sqlx::query_scalar!(
+        r#"SELECT u.email FROM workspace_members m
+           JOIN users u ON u.id = m.user_id
+           WHERE m.workspace_id = $1 AND u.is_active = true"#,
+        workspace_id
+    )
+    .fetch_all(pool)
+    .await;
+
+    let miembros = match miembros {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("ERROR al buscar miembros del workspace {workspace_id} para alertar: {e}");
+            return;
+        }
+    };
+
+    for email in miembros {
+        if let Err(e) = correo::enviar(&email, title, &correo::plantilla_alerta(title, body)).await
+        {
+            eprintln!("AVISO: no se pudo enviar la alerta por correo a {email}: {e}");
+        }
+    }
 }
 
 /// Suscripciones activas cuyo próximo cobro cae dentro de

@@ -25,4 +25,9 @@ pub fn router() -> Router<PgPool> {
         .route("/yo", get(handlers::yo))
         .route("/mis-workspaces", get(handlers::mis_workspaces))
         .route("/invitaciones/aceptar", post(handlers::aceptar_invitacion))
+        .route(
+            "/solicitar-recuperacion",
+            post(handlers::solicitar_recuperacion),
+        )
+        .route("/recuperar-password", post(handlers::recuperar_password))
 }
